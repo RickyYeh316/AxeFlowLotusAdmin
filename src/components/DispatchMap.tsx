@@ -5,7 +5,7 @@ import { db } from '../firebase/config';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { APIProvider, Map, useMap, AdvancedMarker } from '@vis.gl/react-google-maps';
 import { mapStyles } from '../data/mapStyles';
-import { Driver, Order } from '../types';
+import { Driver, Order, DriverStatus } from '../types';
 import { MapPin, Compass, Info, TrafficCone, Layers, Award, Phone, Shield } from 'lucide-react';
 import { MockMap } from './MockMap'; // We will create this as a separate file to keep this clean
 
@@ -65,19 +65,26 @@ export default function DispatchMap({ apiKey }: DispatchMapProps) {
       const list: Driver[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
-        // Standardize driver schema
+        let driverStatus = data.status || DriverStatus.OFFLINE;
+        // Robust converter for old numeric statuses
+        if (driverStatus === 0 || driverStatus === '0') driverStatus = DriverStatus.OFFLINE;
+        else if (driverStatus === 1 || driverStatus === '1') driverStatus = DriverStatus.IDLE;
+        else if (driverStatus === 2 || driverStatus === '2') driverStatus = DriverStatus.IN_SERVICE;
+
         list.push({
           email: doc.id,
+          id: doc.id,
           name: data.name || '未命名司機',
           phone: data.phone || '無電話',
-          carPlate: data.carPlate || '未填寫車牌',
+          plateNumber: data.plateNumber || data.carPlate || '未填寫車牌',
+          carPlate: data.carPlate || data.plateNumber || '未填寫車牌',
           carColor: data.carColor || '',
           carMaker: data.carMaker || '',
           carModel: data.carModel || '',
           avatar: data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-          status: data.status || 0,
-          working: data.working || false,
-          isWorking: data.isWorking || false,
+          status: driverStatus as DriverStatus,
+          working: driverStatus === DriverStatus.IDLE,
+          isWorking: driverStatus === DriverStatus.IN_SERVICE,
           loginCount: data.loginCount || 0,
           currentLocation: data.currentLocation ? {
             lat: data.currentLocation.lat,
@@ -119,9 +126,10 @@ export default function DispatchMap({ apiKey }: DispatchMapProps) {
   const hasValidKey = apiKey && apiKey.startsWith('AIzaSy');
 
   const getMarkerBgColor = (driver: Driver) => {
-    if (driver.status === 2 || driver.isWorking) return '#ef4444'; // Red for Busy
-    if (driver.status === 1 || driver.working) return '#10b981'; // Green for Online
-    return '#6b7280'; // Gray for offline
+    if (driver.status === DriverStatus.OFFLINE) return '#6b7280'; // Gray
+    if (driver.status === DriverStatus.SUSPENDED) return '#eab308'; // Yellow
+    if (driver.status === DriverStatus.IDLE || driver.status === DriverStatus.IN_QUEUE) return '#10b981'; // Green
+    return '#ef4444'; // Red for Busy
   };
 
   const getVehicleLabel = (maker: string, model: string) => {
@@ -200,7 +208,7 @@ export default function DispatchMap({ apiKey }: DispatchMapProps) {
                         boxShadow: '0 2px 4px rgba(0,0,0,0.4)',
                         whiteSpace: 'nowrap'
                       }}>
-                        {driver.carPlate}
+                        {driver.plateNumber}
                       </div>
                     </div>
                   </AdvancedMarker>
@@ -294,8 +302,9 @@ export default function DispatchMap({ apiKey }: DispatchMapProps) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {drivers.map((driver) => {
               const isSelected = selectedDriver?.email === driver.email;
-              const statusText = driver.status === 2 || driver.isWorking ? '載客中' : '空車中';
-              const statusClass = driver.status === 2 || driver.isWorking ? 'status-pill busy' : 'status-pill online';
+              const isBusy = driver.status !== DriverStatus.IDLE && driver.status !== DriverStatus.IN_QUEUE && driver.status !== DriverStatus.OFFLINE;
+              const statusText = driver.status === DriverStatus.OFFLINE ? '已下線' : isBusy ? '載客中' : '空車中';
+              const statusClass = driver.status === DriverStatus.OFFLINE ? 'status-pill offline' : isBusy ? 'status-pill busy' : 'status-pill online';
 
               return (
                 <div
@@ -310,7 +319,7 @@ export default function DispatchMap({ apiKey }: DispatchMapProps) {
                       <span className={statusClass} style={{ fontSize: '0.65rem', padding: '2px 6px' }}>{statusText}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                      <span>{driver.carPlate}</span>
+                      <span>{driver.plateNumber}</span>
                       <span>{driver.currentLocation?.speed ? `${Math.round(driver.currentLocation.speed * 3.6)} km/h` : '靜止'}</span>
                     </div>
                   </div>
@@ -339,7 +348,7 @@ export default function DispatchMap({ apiKey }: DispatchMapProps) {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: '0.75rem', background: 'rgba(255,255,255,0.02)', padding: 10, borderRadius: 6 }}>
-              <div>車牌: <strong style={{ color: 'white' }}>{selectedDriver.carPlate}</strong></div>
+              <div>車牌: <strong style={{ color: 'white' }}>{selectedDriver.plateNumber}</strong></div>
               <div>聯絡: <strong style={{ color: 'white' }}>{selectedDriver.phone}</strong></div>
               <div style={{ gridColumn: 'span 2', marginTop: 4 }}>
                 座標: <span style={{ color: 'var(--text-secondary)' }}>{selectedDriver.currentLocation?.lat.toFixed(5)}, {selectedDriver.currentLocation?.lng.toFixed(5)}</span>

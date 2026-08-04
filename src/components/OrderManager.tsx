@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase/config';
-import { collection, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { Plus, X, Check, Compass, AlertCircle, ShoppingBag, MapPin, Search, ChevronUp, ChevronDown } from 'lucide-react';
-import { Order, Driver, User } from '../types';
+import { collection, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, Timestamp } from 'firebase/firestore';
+import { Plus, X, Check, Compass, AlertCircle, ShoppingBag, MapPin, Search, ChevronUp, ChevronDown, Trash2, Calendar } from 'lucide-react';
+import { Order, Driver, User, OrderStatus, DriverStatus } from '../types';
 
 export default function OrderManager() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -47,16 +47,22 @@ export default function OrderManager() {
         const data = doc.data();
         list.push({
           id: doc.id,
-          passengerId: data.passengerId || '',
+          readableId: data.readableId || doc.id.slice(0, 8),
+          userId: data.userId || data.passengerId || 'guest',
+          passengerId: data.passengerId || data.userId || 'guest',
           passengerName: data.passengerName || '訪客',
           passengerAvatar: data.passengerAvatar || '',
           driverId: data.driverId || '',
           driverName: data.driverName || '未指派',
           carPlate: data.carPlate || '',
-          startAddress: data.startAddress || '',
-          endAddress: data.endAddress || '',
-          status: data.status || 1,
-          statusText: data.statusText || '處理中',
+          pickupLocation: data.pickupLocation || { lat: 0, lng: 0, address: data.startAddress || '' },
+          destination: data.destination || { lat: 0, lng: 0, address: data.endAddress || '' },
+          startAddress: data.startAddress || data.pickupLocation?.address || '',
+          endAddress: data.endAddress || data.destination?.address || '',
+          isElderlyCare: data.isElderlyCare || false,
+          isScheduled: data.isScheduled || false,
+          scheduledTime: data.scheduledTime,
+          status: data.status || OrderStatus.PENDING,
           fare: data.fare,
           createdAt: data.createdAt,
           updatedAt: data.updatedAt
@@ -80,19 +86,27 @@ export default function OrderManager() {
       const list: Driver[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
+        let driverStatus = data.status || DriverStatus.OFFLINE;
+        if (driverStatus === 0 || driverStatus === '0') driverStatus = DriverStatus.OFFLINE;
+        else if (driverStatus === 1 || driverStatus === '1') driverStatus = DriverStatus.IDLE;
+        else if (driverStatus === 2 || driverStatus === '2') driverStatus = DriverStatus.IN_SERVICE;
+
         list.push({
           email: doc.id,
+          id: doc.id,
           name: data.name || '',
           phone: data.phone || '',
-          carPlate: data.carPlate || '',
+          plateNumber: data.plateNumber || data.carPlate || '',
+          carPlate: data.carPlate || data.plateNumber || '',
           carColor: data.carColor || '',
           carMaker: data.carMaker || '',
           carModel: data.carModel || '',
           avatar: data.avatar || '',
-          status: data.status || 0,
-          working: data.working || false,
-          isWorking: data.isWorking || false,
-          loginCount: data.loginCount || 0
+          status: driverStatus as DriverStatus,
+          working: driverStatus === DriverStatus.IDLE,
+          isWorking: driverStatus === DriverStatus.IN_SERVICE,
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt
         });
       });
       setDrivers(list);
@@ -105,10 +119,13 @@ export default function OrderManager() {
         const data = doc.data();
         list.push({
           userId: doc.id,
-          displayName: data.displayName || '',
+          name: data.name || data.displayName || '',
+          displayName: data.displayName || data.name || '',
           pictureUrl: data.pictureUrl || '',
-          statusMessage: data.statusMessage || '',
-          role: data.role || 'passenger'
+          status: data.status || 'NORMAL',
+          noShowCount: data.noShowCount || 0,
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt
         });
       });
       setUsers(list);
@@ -122,7 +139,12 @@ export default function OrderManager() {
   }, []);
 
   // Filter online drivers
-  const onlineDrivers = drivers.filter(d => d.status === 1 || d.working);
+  const onlineDrivers = drivers.filter(d => d.status === DriverStatus.IDLE || d.status === DriverStatus.IN_QUEUE);
+
+  // Form check fields
+  const [isElderlyCare, setIsElderlyCare] = useState(false);
+  const [isScheduled, setIsScheduled] = useState(false);
+  const [scheduledTime, setScheduledTime] = useState('');
 
   const handleOpenDispatch = () => {
     setSelectedUserId(users[0]?.userId || 'guest');
@@ -131,6 +153,9 @@ export default function OrderManager() {
     setStartAddress('台北車站');
     setEndAddress('台北 101');
     setCustomFare('250');
+    setIsElderlyCare(false);
+    setIsScheduled(false);
+    setScheduledTime('');
     setError(null);
     setShowDispatchModal(true);
   };
@@ -175,31 +200,51 @@ export default function OrderManager() {
         }
       }
 
-      const orderData = {
-        passengerId: passId,
+      let schedTime: any = null;
+      if (isScheduled && scheduledTime) {
+        schedTime = Timestamp.fromDate(new Date(scheduledTime));
+      }
+
+      const orderData: any = {
+        userId: passId,
+        passengerId: passId, // Compatibility
         passengerName: passName,
         passengerAvatar: passAvatar,
         driverId: driver.email,
         driverName: driver.name,
-        carPlate: driver.carPlate,
-        startAddress: startAddress.trim(),
-        endAddress: endAddress.trim(),
-        status: 1, // 1 = Dispatched/Active
-        statusText: '已手動派車',
+        carPlate: driver.plateNumber || driver.carPlate,
+        pickupLocation: {
+          lat: 25.0412 + (Math.random() - 0.5) * 0.01,
+          lng: 121.5645 + (Math.random() - 0.5) * 0.01,
+          address: startAddress.trim()
+        },
+        destination: {
+          lat: 25.0412 + (Math.random() - 0.5) * 0.01,
+          lng: 121.5645 + (Math.random() - 0.5) * 0.01,
+          address: endAddress.trim()
+        },
+        startAddress: startAddress.trim(), // Compatibility
+        endAddress: endAddress.trim(), // Compatibility
+        isElderlyCare: isElderlyCare,
+        isScheduled: isScheduled,
+        status: OrderStatus.ACCEPTED,
         fare: Number(customFare) || 200,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       };
 
+      if (schedTime) {
+        orderData.scheduledTime = schedTime;
+      }
+
       // Add to Firestore
       await addDoc(collection(db, 'orders'), orderData);
       
-      // Update driver status in Firestore to Busy (status 2) so they can't be dispatched again immediately
+      // Update driver status in Firestore to Busy (IN_SERVICE) so they can't be dispatched again immediately
       const driverRef = doc(db, 'drivers', driver.email);
       await updateDoc(driverRef, {
-        status: 2,
-        isWorking: true,
-        working: false
+        status: DriverStatus.IN_SERVICE,
+        updatedAt: serverTimestamp()
       });
 
       setShowDispatchModal(false);
@@ -209,34 +254,40 @@ export default function OrderManager() {
     }
   };
 
-  const handleUpdateOrderStatus = async (orderId: string, currentStatus: number, driverEmail: string) => {
+  const handleUpdateOrderStatus = async (orderId: string, actionType: 'complete' | 'cancel', driverEmail: string) => {
     try {
       const orderRef = doc(db, 'orders', orderId);
       
-      if (currentStatus === 1) {
+      if (actionType === 'complete') {
         // Complete the order
         await updateDoc(orderRef, {
-          status: 2,
-          statusText: '訂單已完成',
+          status: OrderStatus.COMPLETED,
           updatedAt: serverTimestamp()
         });
 
-        // Set driver status back to Online (status 1)
+        // Set driver status back to Online (DriverStatus.IDLE)
         if (driverEmail) {
           const driverRef = doc(db, 'drivers', driverEmail);
           await updateDoc(driverRef, {
-            status: 1,
-            working: true,
-            isWorking: false
+            status: DriverStatus.IDLE,
+            updatedAt: serverTimestamp()
           });
         }
       } else {
         // Cancel/Archive order
         await updateDoc(orderRef, {
-          status: 0,
-          statusText: '訂單已關閉',
+          status: OrderStatus.CANCELLED_BY_USER,
           updatedAt: serverTimestamp()
         });
+
+        // Set driver status back to Online (DriverStatus.IDLE)
+        if (driverEmail) {
+          const driverRef = doc(db, 'drivers', driverEmail);
+          await updateDoc(driverRef, {
+            status: DriverStatus.IDLE,
+            updatedAt: serverTimestamp()
+          });
+        }
       }
     } catch (err) {
       console.error("Failed to update order status:", err);
@@ -255,20 +306,42 @@ export default function OrderManager() {
     }
   };
 
-  const getOrderStatusText = (status: number) => {
-    switch (status) {
-      case 1: return '派遣中 (服務中)';
-      case 2: return '已完成 (Completed)';
-      case 0: return '已取消 / 關閉';
-      default: return '未知';
+  const getOrderStatusText = (status: any) => {
+    const statusStr = String(status);
+    switch (statusStr) {
+      case '1': return '已派遣/進行中';
+      case '2': return '已完成';
+      case '0': return '已取消';
+      case OrderStatus.PENDING: return '等待派車';
+      case OrderStatus.MATCHING: return '系統配車中';
+      case OrderStatus.ACCEPTED: return '司機接單';
+      case OrderStatus.ARRIVED: return '司機已抵達';
+      case OrderStatus.IN_PROGRESS: return '行程進行中';
+      case OrderStatus.COMPLETED: return '已完成';
+      case OrderStatus.CANCELLED_BY_USER: return '乘客取消';
+      case OrderStatus.DRIVER_CANCELLED: return '司機取消';
+      case OrderStatus.NO_SHOW: return '乘客未搭乘';
+      case OrderStatus.FAILED_MATCH: return '配車失敗';
+      default: return '處理中';
     }
   };
 
-  const getOrderStatusClass = (status: number) => {
-    switch (status) {
-      case 1: return 'status-pill busy';
-      case 2: return 'status-pill online';
-      default: return 'status-pill offline';
+  const getOrderStatusClass = (status: any) => {
+    const statusStr = String(status);
+    switch (statusStr) {
+      case '1':
+      case OrderStatus.PENDING:
+      case OrderStatus.MATCHING:
+        return 'status-pill online';
+      case OrderStatus.ACCEPTED:
+      case OrderStatus.ARRIVED:
+      case OrderStatus.IN_PROGRESS:
+        return 'status-pill busy';
+      case '2':
+      case OrderStatus.COMPLETED:
+        return 'status-pill online';
+      default:
+        return 'status-pill offline';
     }
   };
 
@@ -278,16 +351,66 @@ export default function OrderManager() {
     return date.toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
   };
 
+  // Filtering States
+  const [searchQuery, setSearchQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState<string>('ALL');
+
   // Filter orders
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
-      if (statusFilter === 'all') return true;
-      if (statusFilter === 'active') return order.status === 1;
-      if (statusFilter === 'completed') return order.status === 2;
-      if (statusFilter === 'closed') return order.status === 0;
-      return true;
+      // 1. Status filter
+      let matchesStatus = true;
+      const statusStr = String(order.status);
+      
+      if (statusFilter === 'active') {
+        matchesStatus = 
+          order.status === 1 || 
+          statusStr === 'PENDING' || 
+          statusStr === 'MATCHING' || 
+          statusStr === 'ACCEPTED' || 
+          statusStr === 'ARRIVED' || 
+          statusStr === 'IN_PROGRESS';
+      } else if (statusFilter === 'completed') {
+        matchesStatus = order.status === 2 || statusStr === 'COMPLETED';
+      } else if (statusFilter === 'closed') {
+        matchesStatus = 
+          order.status === 0 || 
+          statusStr === 'CANCELLED_BY_USER' || 
+          statusStr === 'DRIVER_CANCELLED' || 
+          statusStr === 'NO_SHOW' || 
+          statusStr === 'FAILED_MATCH';
+      }
+
+      // 2. Search query filter
+      let matchesSearch = true;
+      if (searchQuery.trim()) {
+        const searchLower = searchQuery.toLowerCase();
+        const startAddr = order.pickupLocation?.address || order.startAddress || '';
+        const endAddr = order.destination?.address || order.endAddress || '';
+        matchesSearch = 
+          order.id.toLowerCase().includes(searchLower) ||
+          (order.readableId || '').toLowerCase().includes(searchLower) ||
+          (order.passengerName || '').toLowerCase().includes(searchLower) ||
+          (order.driverName || '').toLowerCase().includes(searchLower) ||
+          startAddr.toLowerCase().includes(searchLower) ||
+          endAddr.toLowerCase().includes(searchLower);
+      }
+
+      // 3. Order type filter
+      let matchesType = true;
+      if (typeFilter !== 'ALL') {
+        if (typeFilter === 'ELDERLY') {
+          matchesType = order.isElderlyCare === true;
+        } else if (typeFilter === 'SCHEDULED') {
+          matchesType = order.isScheduled === true;
+        } else if (typeFilter === 'REGULAR') {
+          matchesType = !order.isElderlyCare && !order.isScheduled;
+        }
+      }
+
+      return matchesStatus && matchesSearch && matchesType;
     });
-  }, [orders, statusFilter]);
+  }, [orders, statusFilter, searchQuery, typeFilter]);
 
   // Sorting & Pagination Logic
   const requestSort = (key: string) => {
@@ -397,6 +520,45 @@ export default function OrderManager() {
         </button>
       </div>
 
+      {/* Advanced Filter Inputs Bar */}
+      <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+        {/* Search Input */}
+        <div className="search-wrapper" style={{ width: 280 }}>
+          <Search size={16} className="search-icon" />
+          <input 
+            type="text" 
+            value={searchQuery}
+            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+            placeholder="搜尋乘客、司機、地址、編號..." 
+            className="search-input"
+          />
+        </div>
+
+        {/* Order Type Filter */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+          <span>乘車類型:</span>
+          <select 
+            value={typeFilter}
+            onChange={(e) => { setTypeFilter(e.target.value); setCurrentPage(1); }}
+            style={{
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 6,
+              padding: '6px 12px',
+              color: 'var(--text-primary)',
+              fontSize: '0.8rem',
+              outline: 'none',
+              cursor: 'pointer'
+            }}
+          >
+            <option value="ALL" style={{ background: '#0c0d14' }}>全部類型</option>
+            <option value="REGULAR" style={{ background: '#0c0d14' }}>一般車單</option>
+            <option value="ELDERLY" style={{ background: '#0c0d14' }}>敬老愛心車</option>
+            <option value="SCHEDULED" style={{ background: '#0c0d14' }}>預約車單</option>
+          </select>
+        </div>
+      </div>
+
       {loading ? (
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>載入訂單資料中...</div>
       ) : filteredOrders.length === 0 ? (
@@ -428,7 +590,15 @@ export default function OrderManager() {
                         </div>
                       )}
                       <div>
-                        <span style={{ fontWeight: 600 }}>{order.passengerName}</span>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                          <span style={{ fontWeight: 600 }}>{order.passengerName}</span>
+                          {order.isElderlyCare && (
+                            <span style={{ marginLeft: 6, fontSize: '0.65rem', padding: '1px 5px', background: 'rgba(99, 102, 241, 0.2)', color: 'var(--color-primary)', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: 4 }}>敬老</span>
+                          )}
+                          {order.isScheduled && (
+                            <span style={{ marginLeft: 6, fontSize: '0.65rem', padding: '1px 5px', background: 'rgba(234, 179, 8, 0.2)', color: 'var(--color-accent)', border: '1px solid rgba(234, 179, 8, 0.3)', borderRadius: 4 }}>預約</span>
+                          )}
+                        </div>
                         <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>ID: {order.passengerId.slice(0, 10)}...</div>
                       </div>
                     </div>
@@ -447,11 +617,11 @@ export default function OrderManager() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       <span style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 4 }}>
                         <MapPin size={10} className="text-cyan" />
-                        起點: {order.startAddress}
+                        起點: {order.pickupLocation?.address || order.startAddress}
                       </span>
                       <span style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 4 }}>
                         <MapPin size={10} className="text-gold" />
-                        終點: {order.endAddress}
+                        終點: {order.destination?.address || order.endAddress}
                       </span>
                     </div>
                   </td>
@@ -460,7 +630,7 @@ export default function OrderManager() {
                   </td>
                   <td>
                     <span className={getOrderStatusClass(order.status)}>
-                      {order.statusText}
+                      {getOrderStatusText(order.status)}
                     </span>
                   </td>
                   <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
@@ -468,22 +638,27 @@ export default function OrderManager() {
                   </td>
                   <td>
                     <div className="action-btn-row">
-                      {order.status === 1 && (
-                        <button 
-                          onClick={() => handleUpdateOrderStatus(order.id, 1, order.driverId)}
-                          className="btn-icon edit" 
-                          style={{ borderColor: 'rgba(16, 185, 129, 0.3)', color: 'var(--color-success)' }}
-                          title="標記已完成"
-                        >
-                          <Check size={14} />
-                        </button>
+                      {(order.status === 1 || String(order.status) === 'ACCEPTED' || String(order.status) === 'IN_PROGRESS' || String(order.status) === 'ARRIVED' || String(order.status) === 'PENDING' || String(order.status) === 'MATCHING') && (
+                        <>
+                          <button 
+                            onClick={() => handleUpdateOrderStatus(order.id, 'complete', order.driverId)}
+                            className="btn-icon edit" 
+                            style={{ borderColor: 'rgba(16, 185, 129, 0.3)', color: 'var(--color-success)' }}
+                            title="完成行程"
+                          >
+                            <Check size={14} />
+                          </button>
+                          <button 
+                            onClick={() => handleUpdateOrderStatus(order.id, 'cancel', order.driverId)}
+                            className="btn-icon delete" 
+                            title="取消叫車"
+                          >
+                            <X size={14} />
+                          </button>
+                        </>
                       )}
-                      <button 
-                        onClick={() => handleDeleteOrder(order.id)}
-                        className="btn-icon delete" 
-                        title="刪除紀錄"
-                      >
-                        <X size={14} />
+                      <button onClick={() => handleDeleteOrder(order.id)} className="btn-icon delete" title="刪除記錄">
+                        <Trash2 size={14} />
                       </button>
                     </div>
                   </td>
@@ -684,6 +859,50 @@ export default function OrderManager() {
                   min="0"
                 />
               </div>
+
+              {/* Elderly Care & Reservations checkboxes */}
+              <div style={{ display: 'flex', gap: 20, alignItems: 'center', marginTop: 4 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={isElderlyCare}
+                    onChange={(e) => setIsElderlyCare(e.target.checked)}
+                    style={{ cursor: 'pointer', accentColor: 'var(--color-primary)' }}
+                  />
+                  <span>敬老愛心車 (愛心卡優惠)</span>
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={isScheduled}
+                    onChange={(e) => setIsScheduled(e.target.checked)}
+                    style={{ cursor: 'pointer', accentColor: 'var(--color-primary)' }}
+                  />
+                  <span>預約乘車單 (排定時間)</span>
+                </label>
+              </div>
+
+              {isScheduled && (
+                <div className="form-group animate-fade-in">
+                  <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Calendar size={14} className="text-gold" />
+                    選擇預約派遣時間
+                  </label>
+                  <input 
+                    type="datetime-local" 
+                    value={scheduledTime}
+                    onChange={(e) => setScheduledTime(e.target.value)}
+                    className="form-input"
+                    required={isScheduled}
+                    style={{
+                      color: 'var(--text-primary)',
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid var(--border-color)'
+                    }}
+                  />
+                </div>
+              )}
 
               <div className="modal-footer">
                 <button type="button" onClick={() => setShowDispatchModal(false)} className="btn-secondary">

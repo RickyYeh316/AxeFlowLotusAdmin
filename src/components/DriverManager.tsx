@@ -3,8 +3,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase/config';
 import { collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
-import { Plus, Edit2, Trash2, X, Check, AlertTriangle, Star, ChevronUp, ChevronDown } from 'lucide-react';
-import { Driver } from '../types';
+import { Search, Plus, Edit2, Trash2, X, Check, AlertTriangle, Star, ChevronUp, ChevronDown } from 'lucide-react';
+import { Driver, DriverStatus } from '../types';
 
 export default function DriverManager() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -34,7 +34,7 @@ export default function DriverManager() {
   const [carMaker, setCarMaker] = useState('Toyota');
   const [carModel, setCarModel] = useState('Sienta');
   const [vehicleType, setVehicleType] = useState('standard');
-  const [status, setStatus] = useState(1); // 1 = online, 2 = busy, 0 = offline
+  const [status, setStatus] = useState<DriverStatus>(DriverStatus.OFFLINE);
 
   // Listen to Firestore
   useEffect(() => {
@@ -42,20 +42,26 @@ export default function DriverManager() {
       const list: Driver[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
+        let driverStatus = data.status || DriverStatus.OFFLINE;
+        // Robust converter for old numeric statuses
+        if (driverStatus === 0 || driverStatus === '0') driverStatus = DriverStatus.OFFLINE;
+        else if (driverStatus === 1 || driverStatus === '1') driverStatus = DriverStatus.IDLE;
+        else if (driverStatus === 2 || driverStatus === '2') driverStatus = DriverStatus.IN_SERVICE;
+
         list.push({
           email: doc.id,
+          id: doc.id,
           name: data.name || '',
           phone: data.phone || '',
-          carPlate: data.carPlate || '',
+          plateNumber: data.plateNumber || data.carPlate || '',
+          carPlate: data.carPlate || data.plateNumber || '',
           carColor: data.carColor || '',
           carMaker: data.carMaker || '',
           carModel: data.carModel || '',
           avatar: data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-          status: data.status || 0,
-          working: data.working || false,
-          isWorking: data.isWorking || false,
-          loginCount: data.loginCount || 0,
-          currentLocation: data.currentLocation,
+          status: driverStatus as DriverStatus,
+          working: driverStatus === DriverStatus.IDLE,
+          isWorking: driverStatus === DriverStatus.IN_SERVICE,
           createdAt: data.createdAt,
           updatedAt: data.updatedAt
         });
@@ -89,8 +95,41 @@ export default function DriverManager() {
     );
   };
 
+  // Filtering States
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+
+  // Filtering & Sorting Logic
+  const filteredDrivers = useMemo(() => {
+    return drivers.filter((driver) => {
+      const searchLower = searchQuery.toLowerCase();
+      const matchesSearch = 
+        driver.name.toLowerCase().includes(searchLower) ||
+        driver.email.toLowerCase().includes(searchLower) ||
+        (driver.phone || '').toLowerCase().includes(searchLower) ||
+        driver.plateNumber.toLowerCase().includes(searchLower);
+
+      let matchesStatus = true;
+      if (statusFilter !== 'ALL') {
+        if (statusFilter === 'ONLINE_IDLE') {
+          matchesStatus = driver.status === DriverStatus.IDLE || driver.status === DriverStatus.IN_QUEUE;
+        } else if (statusFilter === 'BUSY') {
+          matchesStatus = 
+            driver.status === DriverStatus.DISPATCHED ||
+            driver.status === DriverStatus.EN_ROUTE ||
+            driver.status === DriverStatus.ARRIVED ||
+            driver.status === DriverStatus.IN_SERVICE;
+        } else {
+          matchesStatus = driver.status === statusFilter;
+        }
+      }
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [drivers, searchQuery, statusFilter]);
+
   const sortedDrivers = useMemo(() => {
-    let sortable = [...drivers];
+    let sortable = [...filteredDrivers];
     if (sortConfig !== null) {
       sortable.sort((a: any, b: any) => {
         let aVal = a[sortConfig.key];
@@ -108,7 +147,7 @@ export default function DriverManager() {
       });
     }
     return sortable;
-  }, [drivers, sortConfig]);
+  }, [filteredDrivers, sortConfig]);
 
   const totalPages = Math.ceil(sortedDrivers.length / itemsPerPage);
   const paginatedDrivers = useMemo(() => {
@@ -163,7 +202,7 @@ export default function DriverManager() {
     setCarColor('黃');
     setCarMaker('Toyota');
     setCarModel('Sienta');
-    setStatus(1);
+    setStatus(DriverStatus.OFFLINE);
     setError(null);
     setShowModal(true);
   };
@@ -198,13 +237,12 @@ export default function DriverManager() {
       const driverData: any = {
         name: name.trim(),
         phone: phone.trim(),
+        plateNumber: carPlate.trim().toUpperCase(),
         carPlate: carPlate.trim().toUpperCase(),
         carColor: carColor.trim(),
         carMaker: carMaker.trim(),
         carModel: carModel.trim(),
         status: status,
-        working: status === 1,
-        isWorking: status === 2,
         updatedAt: new Date()
       };
 
@@ -242,15 +280,30 @@ export default function DriverManager() {
   };
 
   const getDriverStatusText = (driver: Driver) => {
-    if (driver.status === 2 || driver.isWorking) return '載客中 (忙碌)';
-    if (driver.status === 1 || driver.working) return '服務中 (空車)';
-    return '已下線';
+    switch (driver.status) {
+      case DriverStatus.OFFLINE: return '已下線';
+      case DriverStatus.IDLE: return '上線空車';
+      case DriverStatus.IN_QUEUE: return '排班中';
+      case DriverStatus.DISPATCHED: return '媒合中';
+      case DriverStatus.EN_ROUTE: return '前往接客';
+      case DriverStatus.ARRIVED: return '抵達乘客點';
+      case DriverStatus.IN_SERVICE: return '載客中';
+      case DriverStatus.SUSPENDED: return '限制停權';
+      default: return '已下線';
+    }
   };
 
   const getDriverStatusClass = (driver: Driver) => {
-    if (driver.status === 2 || driver.isWorking) return 'status-pill busy';
-    if (driver.status === 1 || driver.working) return 'status-pill online';
-    return 'status-pill offline';
+    switch (driver.status) {
+      case DriverStatus.OFFLINE: return 'status-pill offline';
+      case DriverStatus.IDLE:
+      case DriverStatus.IN_QUEUE:
+        return 'status-pill online';
+      case DriverStatus.SUSPENDED:
+        return 'status-pill offline';
+      default:
+        return 'status-pill busy';
+    }
   };
 
   return (
@@ -265,22 +318,66 @@ export default function DriverManager() {
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>載入司機名冊中...</div>
-      ) : drivers.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>無任何註冊司機。</div>
       ) : (
-        <div className="admin-table-container">
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('name')}>司機姓名 {getSortIcon('name')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('email')}>電子郵件 {getSortIcon('email')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('phone')}>聯絡電話 {getSortIcon('phone')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('carPlate')}>車牌號碼 {getSortIcon('carPlate')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('carMaker')}>車款車色 {getSortIcon('carMaker')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('status')}>即時狀態 {getSortIcon('status')}</th>
-                <th>操作</th>
-              </tr>
-            </thead>
+        <>
+          {/* Filters Bar */}
+          <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+            {/* Search */}
+            <div className="search-wrapper" style={{ width: 280 }}>
+              <Search size={16} className="search-icon" />
+              <input 
+                type="text" 
+                value={searchQuery}
+                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                placeholder="搜尋司機姓名、電話、車牌..." 
+                className="search-input"
+              />
+            </div>
+
+            {/* Status Filter */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              <span>狀態篩選:</span>
+              <select 
+                value={statusFilter}
+                onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 6,
+                  padding: '6px 12px',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.8rem',
+                  outline: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="ALL" style={{ background: '#0c0d14' }}>全部狀態</option>
+                <option value="ONLINE_IDLE" style={{ background: '#0c0d14' }}>上線空車 (IDLE/熱區排班)</option>
+                <option value="BUSY" style={{ background: '#0c0d14' }}>載客忙碌中 (接單前往/載客中)</option>
+                <option value="OFFLINE" style={{ background: '#0c0d14' }}>已下線 (OFFLINE)</option>
+                <option value="SUSPENDED" style={{ background: '#0c0d14' }}>限制停權中 (SUSPENDED)</option>
+              </select>
+            </div>
+          </div>
+
+          {filteredDrivers.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
+              {searchQuery || statusFilter !== 'ALL' ? '找不到符合篩選條件的司機。' : '目前尚無註冊司機。'}
+            </div>
+          ) : (
+            <div className="admin-table-container">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('name')}>司機姓名 {getSortIcon('name')}</th>
+                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('email')}>電子郵件 {getSortIcon('email')}</th>
+                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('phone')}>聯絡電話 {getSortIcon('phone')}</th>
+                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('plateNumber')}>車牌號碼 {getSortIcon('plateNumber')}</th>
+                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('carMaker')}>車款車色 {getSortIcon('carMaker')}</th>
+                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('status')}>即時狀態 {getSortIcon('status')}</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
             <tbody>
               {paginatedDrivers.map((driver) => (
                 <tr key={driver.email}>
@@ -302,7 +399,7 @@ export default function DriverManager() {
                   <td>{driver.phone}</td>
                   <td>
                     <span style={{ fontFamily: 'monospace', fontWeight: 700, background: 'rgba(255,255,255,0.05)', padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border-color)' }}>
-                      {driver.carPlate}
+                      {driver.plateNumber}
                     </span>
                   </td>
                   <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
@@ -404,7 +501,10 @@ export default function DriverManager() {
             </div>
           )}
         </div>
-      )}
+      )
+    }
+  </>
+)}
 
       {/* Add/Edit Modal */}
       {showModal && (
@@ -514,12 +614,23 @@ export default function DriverManager() {
                 <label className="form-label">服務狀態</label>
                 <select 
                   value={status} 
-                  onChange={(e) => setStatus(Number(e.target.value))}
+                  onChange={(e) => setStatus(e.target.value as DriverStatus)}
                   className="form-select"
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '8px 12px',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.85rem',
+                    outline: 'none'
+                  }}
                 >
-                  <option value={1}>空車服務中 (Online)</option>
-                  <option value={2}>載客忙碌中 (Busy)</option>
-                  <option value={0}>下線休息中 (Offline)</option>
+                  <option value={DriverStatus.IDLE} style={{ background: '#0c0d14' }}>空車服務中 (IDLE)</option>
+                  <option value={DriverStatus.IN_QUEUE} style={{ background: '#0c0d14' }}>排班等待中 (IN_QUEUE)</option>
+                  <option value={DriverStatus.IN_SERVICE} style={{ background: '#0c0d14' }}>載客忙碌中 (IN_SERVICE)</option>
+                  <option value={DriverStatus.OFFLINE} style={{ background: '#0c0d14' }}>下線休息中 (OFFLINE)</option>
+                  <option value={DriverStatus.SUSPENDED} style={{ background: '#0c0d14' }}>限制停權中 (SUSPENDED)</option>
                 </select>
               </div>
 

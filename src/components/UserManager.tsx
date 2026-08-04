@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase/config';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { Search, UserCheck, ShieldAlert, Award, ChevronUp, ChevronDown } from 'lucide-react';
-import { User } from '../types';
+import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { Search, UserCheck, ShieldAlert, Award, ChevronUp, ChevronDown, Trash2, Ban, CheckCircle } from 'lucide-react';
+import { User, UserStatus } from '../types';
 
 export default function UserManager() {
   const [users, setUsers] = useState<User[]>([]);
@@ -13,7 +13,7 @@ export default function UserManager() {
 
   // Sorting State
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'ascending' | 'descending' } | null>({
-    key: 'displayName',
+    key: 'name',
     direction: 'ascending'
   });
 
@@ -32,13 +32,22 @@ export default function UserManager() {
       const list: User[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
+        let userStatus = data.status || UserStatus.NORMAL;
+        // Robust converter for numeric/string values
+        if (userStatus === 0 || userStatus === '0') userStatus = UserStatus.NORMAL;
+        else if (userStatus === 1 || userStatus === '1') userStatus = UserStatus.REQUESTING;
+        else if (userStatus === 2 || userStatus === '2') userStatus = UserStatus.IN_TRIP;
+        else if (userStatus === 3 || userStatus === '3') userStatus = UserStatus.BANNED;
+
         list.push({
           userId: doc.id,
-          displayName: data.displayName || '未設定名稱',
+          id: doc.id,
+          name: data.name || data.displayName || '未設定名稱',
+          displayName: data.displayName || data.name || '未設定名稱',
           pictureUrl: data.pictureUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-          statusMessage: data.statusMessage || '',
-          role: data.role || 'passenger',
-          lastLoginAt: data.lastLoginAt,
+          status: userStatus as UserStatus,
+          phoneNumber: data.phoneNumber || '',
+          noShowCount: data.noShowCount || 0,
           createdAt: data.createdAt,
           updatedAt: data.updatedAt
         });
@@ -65,15 +74,48 @@ export default function UserManager() {
     });
   };
 
-  // Filter users based on search
+  // Filtering States
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+
+  // Filter users based on search & status
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
-      const nameMatch = user.displayName.toLowerCase().includes(searchQuery.toLowerCase());
-      const idMatch = user.userId.toLowerCase().includes(searchQuery.toLowerCase());
-      const statusMatch = user.statusMessage.toLowerCase().includes(searchQuery.toLowerCase());
-      return nameMatch || idMatch || statusMatch;
+      const searchLower = searchQuery.toLowerCase();
+      const nameMatch = user.name.toLowerCase().includes(searchLower) || user.displayName?.toLowerCase().includes(searchLower);
+      const idMatch = user.userId.toLowerCase().includes(searchLower);
+      const phoneMatch = (user.phoneNumber || '').toLowerCase().includes(searchLower);
+      const matchesSearch = nameMatch || idMatch || phoneMatch;
+
+      let matchesStatus = true;
+      if (statusFilter !== 'ALL') {
+        if (statusFilter === 'IN_TRIP') {
+          matchesStatus = user.status === UserStatus.IN_TRIP || user.status === UserStatus.REQUESTING;
+        } else {
+          matchesStatus = user.status === statusFilter;
+        }
+      }
+
+      return matchesSearch && matchesStatus;
     });
-  }, [users, searchQuery]);
+  }, [users, searchQuery, statusFilter]);
+
+  const handleToggleBan = async (user: User) => {
+    const isBanned = user.status === UserStatus.BANNED;
+    const newStatus = isBanned ? UserStatus.NORMAL : UserStatus.BANNED;
+    const actionText = isBanned ? '解除停權' : '執行停權';
+    
+    if (window.confirm(`確定要對乘客 ${user.name} ${actionText} 嗎？`)) {
+      try {
+        await updateDoc(doc(db, 'users', user.userId), {
+          status: newStatus,
+          updatedAt: new Date()
+        });
+      } catch (e) {
+        console.error("Failed to toggle user status:", e);
+        alert('操作失敗，請確認權限。');
+      }
+    }
+  };
 
   // Sorting & Pagination Logic
   const requestSort = (key: string) => {
@@ -175,16 +217,41 @@ export default function UserManager() {
         </div>
         
         {/* Search Bar */}
-        <div className="search-wrapper" style={{ width: 280 }}>
-          <Search size={16} className="search-icon" />
-          <input 
-            type="text" 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜尋乘客姓名或 LINE ID..." 
-            className="search-input"
-            style={{ paddingLeft: 38 }}
-          />
+        <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Status Filter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+            <span>狀態篩選:</span>
+            <select 
+              value={statusFilter}
+              onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+              style={{
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 6,
+                padding: '6px 12px',
+                color: 'var(--text-primary)',
+                fontSize: '0.8rem',
+                outline: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="ALL" style={{ background: '#0c0d14' }}>全部狀態</option>
+              <option value={UserStatus.NORMAL} style={{ background: '#0c0d14' }}>正常可叫車 (NORMAL)</option>
+              <option value="IN_TRIP" style={{ background: '#0c0d14' }}>行程中 (IN_TRIP/叫車中)</option>
+              <option value={UserStatus.BANNED} style={{ background: '#0c0d14' }}>限制停權中 (BANNED)</option>
+            </select>
+          </div>
+
+          <div className="search-wrapper" style={{ width: 280 }}>
+            <Search size={16} className="search-icon" />
+            <input 
+              type="text" 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="搜尋乘客姓名、電話、LINE ID..." 
+              className="search-input"
+            />
+          </div>
         </div>
       </div>
 
@@ -199,46 +266,68 @@ export default function UserManager() {
           <table className="admin-table">
             <thead>
               <tr>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('displayName')}>乘客名稱 {getSortIcon('displayName')}</th>
+                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('name')}>乘客名稱 {getSortIcon('name')}</th>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('userId')}>LINE 用戶識別碼 (userId) {getSortIcon('userId')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('statusMessage')}>LINE 狀態訊息 {getSortIcon('statusMessage')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('role')}>系統權限 {getSortIcon('role')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('createdAt')}>首次註冊時間 {getSortIcon('createdAt')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('lastLoginAt')}>最後登入時間 {getSortIcon('lastLoginAt')}</th>
+                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('phoneNumber')}>聯絡電話 {getSortIcon('phoneNumber')}</th>
+                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('status')}>目前狀態 {getSortIcon('status')}</th>
+                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('noShowCount')}>棄單次數 {getSortIcon('noShowCount')}</th>
+                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('createdAt')}>註冊時間 {getSortIcon('createdAt')}</th>
+                <th>管理操作</th>
               </tr>
             </thead>
             <tbody>
-              {paginatedUsers.map((user) => (
-                <tr key={user.userId}>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <img src={user.pictureUrl} alt={user.displayName} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-color)' }} />
-                      <span style={{ fontWeight: 700 }}>{user.displayName}</span>
-                    </div>
-                  </td>
-                  <td style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
-                    {user.userId}
-                  </td>
-                  <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={user.statusMessage}>
-                    {user.statusMessage || <span style={{ color: 'var(--text-muted)' }}>無設定</span>}
-                  </td>
-                  <td>
-                    {user.role === 'admin' ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--color-primary)', fontWeight: 600, fontSize: '0.75rem' }}>
-                        <Award size={14} /> 管理員
+              {paginatedUsers.map((user) => {
+                let statusText = '可叫車';
+                let statusClass = 'status-pill online';
+                if (user.status === UserStatus.BANNED) {
+                  statusText = '已停權';
+                  statusClass = 'status-pill offline';
+                } else if (user.status === UserStatus.IN_TRIP) {
+                  statusText = '行程中';
+                  statusClass = 'status-pill busy';
+                } else if (user.status === UserStatus.REQUESTING) {
+                  statusText = '媒合中';
+                  statusClass = 'status-pill busy';
+                }
+
+                return (
+                  <tr key={user.userId}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <img src={user.pictureUrl} alt={user.name} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-color)' }} />
+                        <span style={{ fontWeight: 700 }}>{user.name}</span>
+                      </div>
+                    </td>
+                    <td style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+                      {user.userId}
+                    </td>
+                    <td style={{ fontSize: '0.85rem' }}>
+                      {user.phoneNumber || <span style={{ color: 'var(--text-muted)' }}>未綁定</span>}
+                    </td>
+                    <td>
+                      <span className={statusClass}>
+                        {statusText}
                       </span>
-                    ) : (
-                      <span className="status-pill offline" style={{ fontSize: '0.7rem' }}>一般乘客</span>
-                    )}
-                  </td>
-                  <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                    {formatDate(user.createdAt)}
-                  </td>
-                  <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                    {formatDate(user.lastLoginAt)}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td style={{ textAlign: 'center', fontWeight: user.noShowCount > 0 ? 700 : 500, color: user.noShowCount > 0 ? 'var(--color-danger)' : 'var(--text-secondary)' }}>
+                      {user.noShowCount} 次
+                    </td>
+                    <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      {formatDate(user.createdAt)}
+                    </td>
+                    <td>
+                      <button 
+                        onClick={() => handleToggleBan(user)}
+                        className={`btn-icon ${user.status === UserStatus.BANNED ? 'edit' : 'delete'}`}
+                        title={user.status === UserStatus.BANNED ? '啟用帳號' : '停權帳號'}
+                        style={{ display: 'inline-flex', padding: 6 }}
+                      >
+                        {user.status === UserStatus.BANNED ? <CheckCircle size={14} /> : <Ban size={14} />}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
 

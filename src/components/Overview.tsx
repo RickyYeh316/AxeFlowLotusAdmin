@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase/config';
 import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { Car, Users, ClipboardList, Tag, Clock, ArrowUpRight } from 'lucide-react';
-import { Driver, User, Order, Coupon } from '../types';
+import { Driver, User, Order, Coupon, DriverStatus, OrderStatus } from '../types';
 
 interface OverviewProps {
   onNavigate: (tab: string) => void;
@@ -29,7 +29,8 @@ export default function Overview({ onNavigate }: OverviewProps) {
       snapshot.forEach((doc) => {
         total++;
         const data = doc.data();
-        if (data.status === 1 || data.working === true) {
+        const statusStr = String(data.status);
+        if (statusStr === '1' || statusStr === DriverStatus.IDLE || statusStr === DriverStatus.IN_QUEUE || data.working === true) {
           online++;
         }
       });
@@ -59,16 +60,18 @@ export default function Overview({ onNavigate }: OverviewProps) {
         const data = doc.data();
         list.push({
           id: doc.id,
-          passengerId: data.passengerId || '',
+          userId: data.userId || data.passengerId || 'guest',
+          passengerId: data.passengerId || data.userId || 'guest',
           passengerName: data.passengerName || '訪客',
           passengerAvatar: data.passengerAvatar || '',
           driverId: data.driverId || '',
           driverName: data.driverName || '未指派',
           carPlate: data.carPlate || '',
-          startAddress: data.startAddress || '',
-          endAddress: data.endAddress || '',
-          status: data.status || 1,
-          statusText: data.statusText || '處理中',
+          pickupLocation: data.pickupLocation || { lat: 0, lng: 0, address: data.startAddress || '' },
+          destination: data.destination || { lat: 0, lng: 0, address: data.endAddress || '' },
+          startAddress: data.startAddress || data.pickupLocation?.address || '',
+          endAddress: data.endAddress || data.destination?.address || '',
+          status: data.status || OrderStatus.PENDING,
           fare: data.fare,
           createdAt: data.createdAt,
           updatedAt: data.updatedAt
@@ -96,11 +99,38 @@ export default function Overview({ onNavigate }: OverviewProps) {
     return date.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
   };
 
-  const getOrderStatusBadgeClass = (status: number) => {
-    switch (status) {
-      case 1: return 'status-pill busy'; // Pending/Dispatched
-      case 2: return 'status-pill online'; // Completed
-      default: return 'status-pill offline'; // Cancelled or other
+  const getOrderStatusText = (status: any) => {
+    const statusStr = String(status);
+    switch (statusStr) {
+      case '1': return '進行中';
+      case '2': return '已完成';
+      case '0': return '已取消';
+      case OrderStatus.PENDING: return '等待派車';
+      case OrderStatus.MATCHING: return '系統配車';
+      case OrderStatus.ACCEPTED: return '已接單';
+      case OrderStatus.ARRIVED: return '司機抵達';
+      case OrderStatus.IN_PROGRESS: return '載客中';
+      case OrderStatus.COMPLETED: return '已完成';
+      default: return '已取消';
+    }
+  };
+
+  const getOrderStatusBadgeClass = (status: any) => {
+    const statusStr = String(status);
+    switch (statusStr) {
+      case '1':
+      case OrderStatus.PENDING:
+      case OrderStatus.MATCHING:
+        return 'status-pill online';
+      case OrderStatus.ACCEPTED:
+      case OrderStatus.ARRIVED:
+      case OrderStatus.IN_PROGRESS:
+        return 'status-pill busy';
+      case '2':
+      case OrderStatus.COMPLETED:
+        return 'status-pill online';
+      default:
+        return 'status-pill offline';
     }
   };
 
@@ -219,12 +249,12 @@ export default function Overview({ onNavigate }: OverviewProps) {
                         </span>
                       </td>
                       <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{order.startAddress}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>→ {order.endAddress}</div>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{order.pickupLocation?.address || order.startAddress}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>→ {order.destination?.address || order.endAddress}</div>
                       </td>
                       <td>
                         <span className={getOrderStatusBadgeClass(order.status)}>
-                          {order.statusText}
+                          {getOrderStatusText(order.status)}
                         </span>
                       </td>
                       <td style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>

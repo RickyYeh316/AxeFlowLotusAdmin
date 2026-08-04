@@ -120,9 +120,11 @@ export const MockMap: React.FC<MockMapProps> = ({
 
   const getDriverColor = (driver: Driver, isSelected: boolean) => {
     if (isSelected) return '#ff2a5f'; // Active Red
-    if (driver.status === 2 || driver.isWorking) return '#ef4444'; // Red for busy
-    if (driver.status === 1 || driver.working) return '#10b981'; // Green for online
-    return '#6b7280';
+    const statusStr = String(driver.status);
+    if (driver.status === 'SUSPENDED') return '#eab308'; // Yellow for suspended
+    if (driver.status === 'OFFLINE' || statusStr === '0') return '#6b7280'; // Gray
+    if (driver.status === 'IDLE' || driver.status === 'IN_QUEUE' || statusStr === '1') return '#10b981'; // Green
+    return '#ef4444'; // Red for busy / active service
   };
 
   return (
@@ -318,7 +320,7 @@ export const MockMap: React.FC<MockMapProps> = ({
                   fill="#ffffff"
                   fontWeight="bold"
                 >
-                  {driver.carPlate}
+                  {driver.plateNumber || driver.carPlate}
                 </text>
               </g>
             </g>
