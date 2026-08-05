@@ -72,6 +72,9 @@ export default function Overview({ onNavigate }: OverviewProps) {
           startAddress: data.startAddress || data.pickupLocation?.address || '',
           endAddress: data.endAddress || data.destination?.address || '',
           status: data.status || OrderStatus.PENDING,
+          isElderlyCare: !!data.isElderlyCare,
+          isScheduled: !!data.isScheduled,
+          scheduledTime: data.scheduledTime || null,
           fare: data.fare,
           createdAt: data.createdAt,
           updatedAt: data.updatedAt
@@ -234,13 +237,13 @@ export default function Overview({ onNavigate }: OverviewProps) {
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           {order.passengerAvatar ? (
-                            <img src={order.passengerAvatar} alt={order.passengerName} style={{ width: 24, height: 24, borderRadius: '50%' }} />
+                            <img src={order.passengerAvatar} alt={order.passengerName || '乘客'} style={{ width: 24, height: 24, borderRadius: '50%' }} />
                           ) : (
                             <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem' }}>
-                              {order.passengerName[0]}
+                              {(order.passengerName || '客')[0]}
                             </div>
                           )}
-                          <span style={{ fontWeight: 600 }}>{order.passengerName}</span>
+                          <span style={{ fontWeight: 600 }}>{order.passengerName || '訪客乘客'}</span>
                         </div>
                       </td>
                       <td>

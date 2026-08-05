@@ -222,11 +222,11 @@ export default function DriverManager() {
     setIsEdit(true);
     setEmail(driver.email);
     setName(driver.name);
-    setPhone(driver.phone);
-    setCarPlate(driver.carPlate);
-    setCarColor(driver.carColor);
-    setCarMaker(driver.carMaker);
-    setCarModel(driver.carModel);
+    setPhone(driver.phone || '');
+    setCarPlate(driver.plateNumber || driver.carPlate || '');
+    setCarColor(driver.carColor || '');
+    setCarMaker(driver.carMaker || '');
+    setCarModel(driver.carModel || '');
     setStatus(driver.status);
     setError(null);
     setShowModal(true);

@@ -91,7 +91,6 @@ export default function DispatchMap({ apiKey }: DispatchMapProps) {
             lng: data.currentLocation.lng,
             bearing: data.currentLocation.bearing || 0,
             speed: data.currentLocation.speed || 0,
-            gpsSeq: data.currentLocation.gpsSeq || 0,
             updatedAt: data.currentLocation.updatedAt
           } : undefined,
           createdAt: data.createdAt,
@@ -132,9 +131,9 @@ export default function DispatchMap({ apiKey }: DispatchMapProps) {
     return '#ef4444'; // Red for Busy
   };
 
-  const getVehicleLabel = (maker: string, model: string) => {
+  const getVehicleLabel = (maker?: string, model?: string) => {
     if (!maker && !model) return '標準計程車';
-    return `${maker} ${model}`;
+    return `${maker || ''} ${model || ''}`.trim();
   };
 
   const mapStyleLabels = {

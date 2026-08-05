@@ -82,8 +82,8 @@ export default function OrderManager() {
       });
       // Sort orders by date descending
       list.sort((a, b) => {
-        const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
-        const timeB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
+        const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date((a.createdAt as any) || 0).getTime();
+        const timeB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date((b.createdAt as any) || 0).getTime();
         return timeB - timeA;
       });
       setOrders(list);
@@ -207,8 +207,8 @@ export default function OrderManager() {
         const user = users.find(u => u.userId === selectedUserId);
         if (user) {
           passId = user.userId;
-          passName = user.displayName;
-          passAvatar = user.pictureUrl;
+          passName = user.name || user.displayName || '未命名乘客';
+          passAvatar = user.pictureUrl || '';
         }
       }
 
@@ -376,17 +376,17 @@ export default function OrderManager() {
       
       if (statusFilter === 'active') {
         matchesStatus = 
-          order.status === 1 || 
+          (order.status as any) === 1 || 
           statusStr === 'PENDING' || 
           statusStr === 'MATCHING' || 
           statusStr === 'ACCEPTED' || 
           statusStr === 'ARRIVED' || 
           statusStr === 'IN_PROGRESS';
       } else if (statusFilter === 'completed') {
-        matchesStatus = order.status === 2 || statusStr === 'COMPLETED';
+        matchesStatus = (order.status as any) === 2 || statusStr === 'COMPLETED';
       } else if (statusFilter === 'closed') {
         matchesStatus = 
-          order.status === 0 || 
+          (order.status as any) === 0 || 
           statusStr === 'CANCELLED_BY_USER' || 
           statusStr === 'DRIVER_CANCELLED' || 
           statusStr === 'NO_SHOW' || 
@@ -596,15 +596,15 @@ export default function OrderManager() {
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       {order.passengerAvatar ? (
-                        <img src={order.passengerAvatar} alt={order.passengerName} style={{ width: 28, height: 28, borderRadius: '50%' }} />
+                        <img src={order.passengerAvatar} alt={order.passengerName || '乘客'} style={{ width: 28, height: 28, borderRadius: '50%' }} />
                       ) : (
                         <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem' }}>
-                          {order.passengerName[0]}
+                          {(order.passengerName || '客')[0]}
                         </div>
                       )}
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center' }}>
-                          <span style={{ fontWeight: 600 }}>{order.passengerName}</span>
+                          <span style={{ fontWeight: 600 }}>{order.passengerName || '訪客乘客'}</span>
                           {order.isElderlyCare && (
                             <span style={{ marginLeft: 6, fontSize: '0.65rem', padding: '1px 5px', background: 'rgba(99, 102, 241, 0.2)', color: 'var(--color-primary)', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: 4 }}>敬老</span>
                           )}
@@ -612,7 +612,7 @@ export default function OrderManager() {
                             <span style={{ marginLeft: 6, fontSize: '0.65rem', padding: '1px 5px', background: 'rgba(234, 179, 8, 0.2)', color: 'var(--color-accent)', border: '1px solid rgba(234, 179, 8, 0.3)', borderRadius: 4 }}>預約</span>
                           )}
                         </div>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>ID: {order.passengerId.slice(0, 10)}...</div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>ID: {(order.passengerId || order.userId || '').slice(0, 10)}...</div>
                       </div>
                     </div>
                   </td>
@@ -651,10 +651,10 @@ export default function OrderManager() {
                   </td>
                   <td>
                     <div className="action-btn-row">
-                      {(order.status === 1 || String(order.status) === 'ACCEPTED' || String(order.status) === 'IN_PROGRESS' || String(order.status) === 'ARRIVED' || String(order.status) === 'PENDING' || String(order.status) === 'MATCHING') && (
+                      {((order.status as any) === 1 || String(order.status) === 'ACCEPTED' || String(order.status) === 'IN_PROGRESS' || String(order.status) === 'ARRIVED' || String(order.status) === 'PENDING' || String(order.status) === 'MATCHING') && (
                         <>
                           <button 
-                            onClick={() => handleUpdateOrderStatus(order.id, 'complete', order.driverId)}
+                            onClick={() => handleUpdateOrderStatus(order.id, 'complete', order.driverId || '')}
                             className="btn-icon edit" 
                             style={{ borderColor: 'rgba(16, 185, 129, 0.3)', color: 'var(--color-success)' }}
                             title="完成行程"
@@ -662,7 +662,7 @@ export default function OrderManager() {
                             <Check size={14} />
                           </button>
                           <button 
-                            onClick={() => handleUpdateOrderStatus(order.id, 'cancel', order.driverId)}
+                            onClick={() => handleUpdateOrderStatus(order.id, 'cancel', order.driverId || '')}
                             className="btn-icon delete" 
                             title="取消叫車"
                           >
