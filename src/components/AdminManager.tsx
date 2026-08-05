@@ -26,6 +26,18 @@ export default function AdminManager({ currentAdminEmail }: AdminManagerProps) {
 
   // Form states
   const [showModal, setShowModal] = useState(false);
+
+  useEffect(() => {
+    if (showModal) {
+      document.body.classList.add('modal-open');
+    } else {
+      document.body.classList.remove('modal-open');
+    }
+    return () => {
+      document.body.classList.remove('modal-open');
+    };
+  }, [showModal]);
+
   const [error, setError] = useState<string | null>(null);
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
@@ -193,7 +205,8 @@ export default function AdminManager({ currentAdminEmail }: AdminManagerProps) {
   };
 
   return (
-    <div className="glass content-sheet animate-fade-in" style={{ maxWidth: 720 }}>
+    <>
+      <div className="glass content-sheet animate-fade-in" style={{ maxWidth: 720 }}>
       <div className="sheet-title-row">
         <div>
           <h2 className="sheet-title">後台系統管理員 ({admins.length})</h2>
@@ -335,6 +348,7 @@ export default function AdminManager({ currentAdminEmail }: AdminManagerProps) {
           )}
         </div>
       )}
+      </div>
 
       {/* Add Admin Modal */}
       {showModal && (
@@ -391,6 +405,6 @@ export default function AdminManager({ currentAdminEmail }: AdminManagerProps) {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

@@ -198,7 +198,7 @@ export default function Home() {
   };
 
   return (
-    <div className="admin-shell">
+    <div className={`admin-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       {/* 1. Sidebar Left */}
       <aside className={`admin-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-logo">

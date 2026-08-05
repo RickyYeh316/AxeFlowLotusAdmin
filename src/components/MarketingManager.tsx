@@ -22,6 +22,18 @@ export default function MarketingManager() {
 
   // Form states
   const [showModal, setShowModal] = useState(false);
+
+  useEffect(() => {
+    if (showModal) {
+      document.body.classList.add('modal-open');
+    } else {
+      document.body.classList.remove('modal-open');
+    }
+    return () => {
+      document.body.classList.remove('modal-open');
+    };
+  }, [showModal]);
+
   const [error, setError] = useState<string | null>(null);
   const [couponCode, setCouponCode] = useState('');
   const [title, setTitle] = useState('');
@@ -227,7 +239,8 @@ export default function MarketingManager() {
   };
 
   return (
-    <div className="glass content-sheet animate-fade-in">
+    <>
+      <div className="glass content-sheet animate-fade-in">
       <div className="sheet-title-row">
         <div>
           <h2 className="sheet-title">行銷優惠管理 ({coupons.length})</h2>
@@ -388,6 +401,7 @@ export default function MarketingManager() {
           )}
         </div>
       )}
+      </div>
 
       {/* Add Coupon Modal */}
       {showModal && (
@@ -507,6 +521,6 @@ export default function MarketingManager() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

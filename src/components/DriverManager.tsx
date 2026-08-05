@@ -36,6 +36,17 @@ export default function DriverManager() {
   const [vehicleType, setVehicleType] = useState('standard');
   const [status, setStatus] = useState<DriverStatus>(DriverStatus.OFFLINE);
 
+  useEffect(() => {
+    if (showModal) {
+      document.body.classList.add('modal-open');
+    } else {
+      document.body.classList.remove('modal-open');
+    }
+    return () => {
+      document.body.classList.remove('modal-open');
+    };
+  }, [showModal]);
+
   // Listen to Firestore
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'drivers'), (snapshot) => {
@@ -307,7 +318,8 @@ export default function DriverManager() {
   };
 
   return (
-    <div className="glass content-sheet animate-fade-in">
+    <>
+      <div className="glass content-sheet animate-fade-in">
       <div className="sheet-title-row">
         <h2 className="sheet-title">司機名冊管理 ({drivers.length})</h2>
         <button onClick={openAddModal} className="btn-primary">
@@ -505,6 +517,7 @@ export default function DriverManager() {
     }
   </>
 )}
+      </div>
 
       {/* Add/Edit Modal */}
       {showModal && (
@@ -647,6 +660,6 @@ export default function DriverManager() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

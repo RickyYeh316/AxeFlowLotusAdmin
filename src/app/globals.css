@@ -513,16 +513,35 @@ html, body {
 .modal-overlay {
   position: fixed;
   top: 0;
-  left: 0;
-  width: 100vw;
+  left: 260px;
+  width: calc(100vw - 260px);
   height: 100vh;
-  background: rgba(5, 6, 10, 0.8);
-  backdrop-filter: blur(8px);
+  background: rgba(5, 6, 10, 0.85);
+  backdrop-filter: blur(10px);
   z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
+  transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-collapsed .modal-overlay {
+  left: 78px;
+  width: calc(100vw - 78px);
+}
+
+/* Block background scroll & interactions when modals are open */
+body.modal-open .workspace-body {
+  overflow: hidden !important;
+}
+
+body.modal-open .admin-sidebar,
+body.modal-open .workspace-header,
+body.modal-open .workspace-tabs-bar {
+  pointer-events: none !important;
+  opacity: 0.6;
+  transition: opacity 0.25s ease;
 }
 
 .modal-content {

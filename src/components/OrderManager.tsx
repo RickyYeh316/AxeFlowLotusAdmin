@@ -30,6 +30,18 @@ export default function OrderManager() {
 
   // Form states for Dispatch
   const [showDispatchModal, setShowDispatchModal] = useState(false);
+
+  useEffect(() => {
+    if (showDispatchModal) {
+      document.body.classList.add('modal-open');
+    } else {
+      document.body.classList.remove('modal-open');
+    }
+    return () => {
+      document.body.classList.remove('modal-open');
+    };
+  }, [showDispatchModal]);
+
   const [error, setError] = useState<string | null>(null);
   const [selectedUserId, setSelectedUserId] = useState('');
   const [manualPassengerName, setManualPassengerName] = useState('');
@@ -502,7 +514,8 @@ export default function OrderManager() {
   };
 
   return (
-    <div className="glass content-sheet animate-fade-in">
+    <>
+      <div className="glass content-sheet animate-fade-in">
       <div className="sheet-title-row">
         <div>
           <h2 className="sheet-title">叫車訂單管理 ({filteredOrders.length})</h2>
@@ -744,6 +757,7 @@ export default function OrderManager() {
           )}
         </div>
       )}
+      </div>
 
       {/* Manual Dispatch Modal */}
       {showDispatchModal && (
@@ -917,6 +931,6 @@ export default function OrderManager() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
