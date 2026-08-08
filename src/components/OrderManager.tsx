@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase/config';
 import { collection, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, Timestamp } from 'firebase/firestore';
 import { Plus, X, Check, Compass, AlertCircle, ShoppingBag, MapPin, Search, ChevronUp, ChevronDown, Trash2, Calendar } from 'lucide-react';
-import { Order, Driver, User, OrderStatus, DriverStatus } from '../types';
+import { Order, Driver, User, OrderStatus, DriverTripStatus, DriverAccountStatus, UserTripStatus, UserAccountStatus } from '../types';
 
 export default function OrderManager() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -98,10 +98,25 @@ export default function OrderManager() {
       const list: Driver[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
-        let driverStatus = data.status || DriverStatus.OFFLINE;
-        if (driverStatus === 0 || driverStatus === '0') driverStatus = DriverStatus.OFFLINE;
-        else if (driverStatus === 1 || driverStatus === '1') driverStatus = DriverStatus.IDLE;
-        else if (driverStatus === 2 || driverStatus === '2') driverStatus = DriverStatus.IN_SERVICE;
+
+        // 1. Parsing Trip Status with migration fallbacks
+        let parsedTripStatus = data.tripStatus || data.status || DriverTripStatus.OFFLINE;
+        if (parsedTripStatus === 0 || parsedTripStatus === '0') parsedTripStatus = DriverTripStatus.OFFLINE;
+        else if (parsedTripStatus === 1 || parsedTripStatus === '1') parsedTripStatus = DriverTripStatus.IDLE;
+        else if (parsedTripStatus === 2 || parsedTripStatus === '2') parsedTripStatus = DriverTripStatus.IN_SERVICE;
+        else if (parsedTripStatus === 'SUSPENDED' || parsedTripStatus === 'WAIT_APPROVAL') parsedTripStatus = DriverTripStatus.OFFLINE;
+
+        // 2. Parsing Account Status with migration fallbacks
+        let parsedAccountStatus = data.accountStatus;
+        if (!parsedAccountStatus) {
+          if (data.status === 'WAIT_APPROVAL') {
+            parsedAccountStatus = DriverAccountStatus.PENDING;
+          } else if (data.status === 'SUSPENDED') {
+            parsedAccountStatus = DriverAccountStatus.SUSPENDED;
+          } else {
+            parsedAccountStatus = DriverAccountStatus.ACTIVE;
+          }
+        }
 
         list.push({
           email: doc.id,
@@ -114,9 +129,10 @@ export default function OrderManager() {
           carMaker: data.carMaker || '',
           carModel: data.carModel || '',
           avatar: data.avatar || '',
-          status: driverStatus as DriverStatus,
-          working: driverStatus === DriverStatus.IDLE,
-          isWorking: driverStatus === DriverStatus.IN_SERVICE,
+          tripStatus: parsedTripStatus as DriverTripStatus,
+          accountStatus: parsedAccountStatus as DriverAccountStatus,
+          working: parsedTripStatus === DriverTripStatus.IDLE,
+          isWorking: parsedTripStatus === DriverTripStatus.IN_SERVICE,
           createdAt: data.createdAt,
           updatedAt: data.updatedAt
         });
@@ -129,12 +145,31 @@ export default function OrderManager() {
       const list: User[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
+
+        // 1. Parsing Trip Status with migration fallbacks
+        let parsedTripStatus = data.tripStatus || data.status || UserTripStatus.IDLE;
+        if (parsedTripStatus === 0 || parsedTripStatus === '0' || parsedTripStatus === 'NORMAL') parsedTripStatus = UserTripStatus.IDLE;
+        else if (parsedTripStatus === 1 || parsedTripStatus === '1') parsedTripStatus = UserTripStatus.REQUESTING;
+        else if (parsedTripStatus === 2 || parsedTripStatus === '2') parsedTripStatus = UserTripStatus.IN_TRIP;
+        else if (parsedTripStatus === 'BANNED' || parsedTripStatus === 3 || parsedTripStatus === '3') parsedTripStatus = UserTripStatus.IDLE;
+
+        // 2. Parsing Account Status with migration fallbacks
+        let parsedAccountStatus = data.accountStatus;
+        if (!parsedAccountStatus) {
+          if (data.status === 'BANNED' || data.status === 3 || data.status === '3') {
+            parsedAccountStatus = UserAccountStatus.BANNED;
+          } else {
+            parsedAccountStatus = UserAccountStatus.ACTIVE;
+          }
+        }
+
         list.push({
           userId: doc.id,
           name: data.name || data.displayName || '',
           displayName: data.displayName || data.name || '',
           pictureUrl: data.pictureUrl || '',
-          status: data.status || 'NORMAL',
+          tripStatus: parsedTripStatus as UserTripStatus,
+          accountStatus: parsedAccountStatus as UserAccountStatus,
           noShowCount: data.noShowCount || 0,
           createdAt: data.createdAt,
           updatedAt: data.updatedAt
@@ -151,7 +186,7 @@ export default function OrderManager() {
   }, []);
 
   // Filter online drivers
-  const onlineDrivers = drivers.filter(d => d.status === DriverStatus.IDLE || d.status === DriverStatus.IN_QUEUE);
+  const onlineDrivers = drivers.filter(d => d.accountStatus === DriverAccountStatus.ACTIVE && (d.tripStatus === DriverTripStatus.IDLE || d.tripStatus === DriverTripStatus.IN_QUEUE));
 
   // Form check fields
   const [isElderlyCare, setIsElderlyCare] = useState(false);
@@ -255,7 +290,7 @@ export default function OrderManager() {
       // Update driver status in Firestore to Busy (IN_SERVICE) so they can't be dispatched again immediately
       const driverRef = doc(db, 'drivers', driver.email);
       await updateDoc(driverRef, {
-        status: DriverStatus.IN_SERVICE,
+        tripStatus: DriverTripStatus.IN_SERVICE,
         updatedAt: serverTimestamp()
       });
 
@@ -277,11 +312,11 @@ export default function OrderManager() {
           updatedAt: serverTimestamp()
         });
 
-        // Set driver status back to Online (DriverStatus.IDLE)
+        // Set driver status back to Online (DriverTripStatus.IDLE)
         if (driverEmail) {
           const driverRef = doc(db, 'drivers', driverEmail);
           await updateDoc(driverRef, {
-            status: DriverStatus.IDLE,
+            tripStatus: DriverTripStatus.IDLE,
             updatedAt: serverTimestamp()
           });
         }
@@ -292,11 +327,11 @@ export default function OrderManager() {
           updatedAt: serverTimestamp()
         });
 
-        // Set driver status back to Online (DriverStatus.IDLE)
+        // Set driver status back to Online (DriverTripStatus.IDLE)
         if (driverEmail) {
           const driverRef = doc(db, 'drivers', driverEmail);
           await updateDoc(driverRef, {
-            status: DriverStatus.IDLE,
+            tripStatus: DriverTripStatus.IDLE,
             updatedAt: serverTimestamp()
           });
         }

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase/config';
 import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { Car, Users, ClipboardList, Tag, Clock, ArrowUpRight } from 'lucide-react';
-import { Driver, User, Order, Coupon, DriverStatus, OrderStatus } from '../types';
+import { Driver, User, Order, Coupon, DriverTripStatus, DriverAccountStatus, UserTripStatus, UserAccountStatus, OrderStatus } from '../types';
 
 interface OverviewProps {
   onNavigate: (tab: string) => void;
@@ -29,8 +29,25 @@ export default function Overview({ onNavigate }: OverviewProps) {
       snapshot.forEach((doc) => {
         total++;
         const data = doc.data();
-        const statusStr = String(data.status);
-        if (statusStr === '1' || statusStr === DriverStatus.IDLE || statusStr === DriverStatus.IN_QUEUE || data.working === true) {
+        let tripStatus = data.tripStatus || data.status || DriverTripStatus.OFFLINE;
+        if (tripStatus === 1 || tripStatus === '1') tripStatus = DriverTripStatus.IDLE;
+        else if (tripStatus === 2 || tripStatus === '2') tripStatus = DriverTripStatus.IN_SERVICE;
+        else if (tripStatus === 0 || tripStatus === '0' || tripStatus === 'SUSPENDED' || tripStatus === 'WAIT_APPROVAL') tripStatus = DriverTripStatus.OFFLINE;
+
+        let accountStatus = data.accountStatus;
+        if (!accountStatus) {
+          if (data.status === 'WAIT_APPROVAL') {
+            accountStatus = DriverAccountStatus.PENDING;
+          } else if (data.status === 'SUSPENDED') {
+            accountStatus = DriverAccountStatus.SUSPENDED;
+          } else {
+            accountStatus = DriverAccountStatus.ACTIVE;
+          }
+        }
+
+        const isOnline = tripStatus === DriverTripStatus.IDLE || tripStatus === DriverTripStatus.IN_QUEUE || tripStatus === DriverTripStatus.IN_SERVICE;
+        const isActive = accountStatus === DriverAccountStatus.ACTIVE;
+        if (isOnline && isActive) {
           online++;
         }
       });

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase/config';
 import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { Search, UserCheck, ShieldAlert, Award, ChevronUp, ChevronDown, Trash2, Ban, CheckCircle } from 'lucide-react';
-import { User, UserStatus } from '../types';
+import { User, UserTripStatus, UserAccountStatus } from '../types';
 
 export default function UserManager() {
   const [users, setUsers] = useState<User[]>([]);
@@ -32,12 +32,22 @@ export default function UserManager() {
       const list: User[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
-        let userStatus = data.status || UserStatus.NORMAL;
-        // Robust converter for numeric/string values
-        if (userStatus === 0 || userStatus === '0') userStatus = UserStatus.NORMAL;
-        else if (userStatus === 1 || userStatus === '1') userStatus = UserStatus.REQUESTING;
-        else if (userStatus === 2 || userStatus === '2') userStatus = UserStatus.IN_TRIP;
-        else if (userStatus === 3 || userStatus === '3') userStatus = UserStatus.BANNED;
+        // 1. Parsing Trip Status with migration fallbacks
+        let parsedTripStatus = data.tripStatus || data.status || UserTripStatus.IDLE;
+        if (parsedTripStatus === 0 || parsedTripStatus === '0' || parsedTripStatus === 'NORMAL') parsedTripStatus = UserTripStatus.IDLE;
+        else if (parsedTripStatus === 1 || parsedTripStatus === '1') parsedTripStatus = UserTripStatus.REQUESTING;
+        else if (parsedTripStatus === 2 || parsedTripStatus === '2') parsedTripStatus = UserTripStatus.IN_TRIP;
+        else if (parsedTripStatus === 'BANNED' || parsedTripStatus === 3 || parsedTripStatus === '3') parsedTripStatus = UserTripStatus.IDLE;
+
+        // 2. Parsing Account Status with migration fallbacks
+        let parsedAccountStatus = data.accountStatus;
+        if (!parsedAccountStatus) {
+          if (data.status === 'BANNED' || data.status === 3 || data.status === '3') {
+            parsedAccountStatus = UserAccountStatus.BANNED;
+          } else {
+            parsedAccountStatus = UserAccountStatus.ACTIVE;
+          }
+        }
 
         list.push({
           userId: doc.id,
@@ -45,7 +55,8 @@ export default function UserManager() {
           name: data.name || data.displayName || '未設定名稱',
           displayName: data.displayName || data.name || '未設定名稱',
           pictureUrl: data.pictureUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-          status: userStatus as UserStatus,
+          tripStatus: parsedTripStatus as UserTripStatus,
+          accountStatus: parsedAccountStatus as UserAccountStatus,
           phoneNumber: data.phoneNumber || '',
           noShowCount: data.noShowCount || 0,
           createdAt: data.createdAt,
@@ -75,7 +86,8 @@ export default function UserManager() {
   };
 
   // Filtering States
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [accountFilter, setAccountFilter] = useState<string>('ALL');
+  const [tripFilter, setTripFilter] = useState<string>('ALL');
 
   // Filter users based on search & status
   const filteredUsers = useMemo(() => {
@@ -86,28 +98,33 @@ export default function UserManager() {
       const phoneMatch = (user.phoneNumber || '').toLowerCase().includes(searchLower);
       const matchesSearch = nameMatch || idMatch || phoneMatch;
 
-      let matchesStatus = true;
-      if (statusFilter !== 'ALL') {
-        if (statusFilter === 'IN_TRIP') {
-          matchesStatus = user.status === UserStatus.IN_TRIP || user.status === UserStatus.REQUESTING;
+      let matchesAccount = true;
+      if (accountFilter !== 'ALL') {
+        matchesAccount = user.accountStatus === accountFilter;
+      }
+
+      let matchesTrip = true;
+      if (tripFilter !== 'ALL') {
+        if (tripFilter === 'IN_TRIP') {
+          matchesTrip = user.tripStatus === UserTripStatus.IN_TRIP || user.tripStatus === UserTripStatus.REQUESTING;
         } else {
-          matchesStatus = user.status === statusFilter;
+          matchesTrip = user.tripStatus === tripFilter;
         }
       }
 
-      return matchesSearch && matchesStatus;
+      return matchesSearch && matchesAccount && matchesTrip;
     });
-  }, [users, searchQuery, statusFilter]);
+  }, [users, searchQuery, accountFilter, tripFilter]);
 
   const handleToggleBan = async (user: User) => {
-    const isBanned = user.status === UserStatus.BANNED;
-    const newStatus = isBanned ? UserStatus.NORMAL : UserStatus.BANNED;
+    const isBanned = user.accountStatus === UserAccountStatus.BANNED;
+    const newStatus = isBanned ? UserAccountStatus.ACTIVE : UserAccountStatus.BANNED;
     const actionText = isBanned ? '解除停權' : '執行停權';
     
     if (window.confirm(`確定要對乘客 ${user.name} ${actionText} 嗎？`)) {
       try {
         await updateDoc(doc(db, 'users', user.userId), {
-          status: newStatus,
+          accountStatus: newStatus,
           updatedAt: new Date()
         });
       } catch (e) {
@@ -218,12 +235,12 @@ export default function UserManager() {
         
         {/* Search Bar */}
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* Status Filter */}
+          {/* Account Status Filter */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-            <span>狀態篩選:</span>
+            <span>帳號狀態:</span>
             <select 
-              value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+              value={accountFilter}
+              onChange={(e) => { setAccountFilter(e.target.value); setCurrentPage(1); }}
               style={{
                 background: 'rgba(255, 255, 255, 0.03)',
                 border: '1px solid var(--border-color)',
@@ -235,10 +252,32 @@ export default function UserManager() {
                 cursor: 'pointer'
               }}
             >
-              <option value="ALL" style={{ background: '#0c0d14' }}>全部狀態</option>
-              <option value={UserStatus.NORMAL} style={{ background: '#0c0d14' }}>正常可叫車 (NORMAL)</option>
-              <option value="IN_TRIP" style={{ background: '#0c0d14' }}>行程中 (IN_TRIP/叫車中)</option>
-              <option value={UserStatus.BANNED} style={{ background: '#0c0d14' }}>限制停權中 (BANNED)</option>
+              <option value="ALL" style={{ background: '#0c0d14' }}>全部帳號狀態</option>
+              <option value="ACTIVE" style={{ background: '#0c0d14' }}>啟用正常 (ACTIVE)</option>
+              <option value="BANNED" style={{ background: '#0c0d14' }}>限制停權 (BANNED)</option>
+            </select>
+          </div>
+
+          {/* Trip Status Filter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+            <span>行程狀態:</span>
+            <select 
+              value={tripFilter}
+              onChange={(e) => { setTripFilter(e.target.value); setCurrentPage(1); }}
+              style={{
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 6,
+                padding: '6px 12px',
+                color: 'var(--text-primary)',
+                fontSize: '0.8rem',
+                outline: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="ALL" style={{ background: '#0c0d14' }}>全部行程狀態</option>
+              <option value="IDLE" style={{ background: '#0c0d14' }}>正常空閒 (IDLE)</option>
+              <option value="IN_TRIP" style={{ background: '#0c0d14' }}>叫車行程中 (REQUESTING/IN_TRIP)</option>
             </select>
           </div>
 
@@ -259,7 +298,7 @@ export default function UserManager() {
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>載入乘客名單中...</div>
       ) : filteredUsers.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-          {searchQuery ? '找不到符合搜尋條件的乘客。' : '目前尚無註冊乘客。'}
+          {searchQuery || accountFilter !== 'ALL' || tripFilter !== 'ALL' ? '找不到符合篩選條件的乘客。' : '目前尚無註冊乘客。'}
         </div>
       ) : (
         <div className="admin-table-container">
@@ -269,7 +308,8 @@ export default function UserManager() {
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('name')}>乘客名稱 {getSortIcon('name')}</th>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('userId')}>LINE 用戶識別碼 (userId) {getSortIcon('userId')}</th>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('phoneNumber')}>聯絡電話 {getSortIcon('phoneNumber')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('status')}>目前狀態 {getSortIcon('status')}</th>
+                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('accountStatus')}>帳號權限 {getSortIcon('accountStatus')}</th>
+                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('tripStatus')}>叫車行程 {getSortIcon('tripStatus')}</th>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('noShowCount')}>棄單次數 {getSortIcon('noShowCount')}</th>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('createdAt')}>註冊時間 {getSortIcon('createdAt')}</th>
                 <th>管理操作</th>
@@ -277,17 +317,21 @@ export default function UserManager() {
             </thead>
             <tbody>
               {paginatedUsers.map((user) => {
-                let statusText = '可叫車';
-                let statusClass = 'status-pill online';
-                if (user.status === UserStatus.BANNED) {
-                  statusText = '已停權';
-                  statusClass = 'status-pill offline';
-                } else if (user.status === UserStatus.IN_TRIP) {
-                  statusText = '行程中';
-                  statusClass = 'status-pill busy';
-                } else if (user.status === UserStatus.REQUESTING) {
-                  statusText = '媒合中';
-                  statusClass = 'status-pill busy';
+                let accText = '正常啟用';
+                let accClass = 'status-pill online';
+                if (user.accountStatus === UserAccountStatus.BANNED) {
+                  accText = '已停權';
+                  accClass = 'status-pill offline';
+                }
+
+                let tripText = '正常空閒';
+                let tripClass = 'status-pill online';
+                if (user.tripStatus === UserTripStatus.IN_TRIP) {
+                  tripText = '行程中';
+                  tripClass = 'status-pill busy';
+                } else if (user.tripStatus === UserTripStatus.REQUESTING) {
+                  tripText = '媒合中';
+                  tripClass = 'status-pill busy';
                 }
 
                 return (
@@ -305,8 +349,13 @@ export default function UserManager() {
                       {user.phoneNumber || <span style={{ color: 'var(--text-muted)' }}>未綁定</span>}
                     </td>
                     <td>
-                      <span className={statusClass}>
-                        {statusText}
+                      <span className={accClass}>
+                        {accText}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={tripClass}>
+                        {tripText}
                       </span>
                     </td>
                     <td style={{ textAlign: 'center', fontWeight: user.noShowCount > 0 ? 700 : 500, color: user.noShowCount > 0 ? 'var(--color-danger)' : 'var(--text-secondary)' }}>
@@ -318,11 +367,11 @@ export default function UserManager() {
                     <td>
                       <button 
                         onClick={() => handleToggleBan(user)}
-                        className={`btn-icon ${user.status === UserStatus.BANNED ? 'edit' : 'delete'}`}
-                        title={user.status === UserStatus.BANNED ? '啟用帳號' : '停權帳號'}
+                        className={`btn-icon ${user.accountStatus === UserAccountStatus.BANNED ? 'edit' : 'delete'}`}
+                        title={user.accountStatus === UserAccountStatus.BANNED ? '啟用帳號' : '停權帳號'}
                         style={{ display: 'inline-flex', padding: 6 }}
                       >
-                        {user.status === UserStatus.BANNED ? <CheckCircle size={14} /> : <Ban size={14} />}
+                        {user.accountStatus === UserAccountStatus.BANNED ? <CheckCircle size={14} /> : <Ban size={14} />}
                       </button>
                     </td>
                   </tr>

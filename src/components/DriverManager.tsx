@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase/config';
 import { collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { Search, Plus, Edit2, Trash2, X, Check, AlertTriangle, Star, ChevronUp, ChevronDown } from 'lucide-react';
-import { Driver, DriverStatus } from '../types';
+import { Driver, DriverTripStatus, DriverAccountStatus } from '../types';
 
 export default function DriverManager() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -34,7 +34,8 @@ export default function DriverManager() {
   const [carMaker, setCarMaker] = useState('Toyota');
   const [carModel, setCarModel] = useState('Sienta');
   const [vehicleType, setVehicleType] = useState('standard');
-  const [status, setStatus] = useState<DriverStatus>(DriverStatus.OFFLINE);
+  const [tripStatus, setTripStatus] = useState<DriverTripStatus>(DriverTripStatus.OFFLINE);
+  const [accountStatus, setAccountStatus] = useState<DriverAccountStatus>(DriverAccountStatus.ACTIVE);
 
   useEffect(() => {
     if (showModal) {
@@ -53,11 +54,25 @@ export default function DriverManager() {
       const list: Driver[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
-        let driverStatus = data.status || DriverStatus.OFFLINE;
-        // Robust converter for old numeric statuses
-        if (driverStatus === 0 || driverStatus === '0') driverStatus = DriverStatus.OFFLINE;
-        else if (driverStatus === 1 || driverStatus === '1') driverStatus = DriverStatus.IDLE;
-        else if (driverStatus === 2 || driverStatus === '2') driverStatus = DriverStatus.IN_SERVICE;
+        
+        // 1. Parsing Trip Status with migration fallbacks
+        let parsedTripStatus = data.tripStatus || data.status || DriverTripStatus.OFFLINE;
+        if (parsedTripStatus === 0 || parsedTripStatus === '0') parsedTripStatus = DriverTripStatus.OFFLINE;
+        else if (parsedTripStatus === 1 || parsedTripStatus === '1') parsedTripStatus = DriverTripStatus.IDLE;
+        else if (parsedTripStatus === 2 || parsedTripStatus === '2') parsedTripStatus = DriverTripStatus.IN_SERVICE;
+        else if (parsedTripStatus === 'SUSPENDED' || parsedTripStatus === 'WAIT_APPROVAL') parsedTripStatus = DriverTripStatus.OFFLINE;
+
+        // 2. Parsing Account Status with migration fallbacks
+        let parsedAccountStatus = data.accountStatus;
+        if (!parsedAccountStatus) {
+          if (data.status === 'WAIT_APPROVAL') {
+            parsedAccountStatus = DriverAccountStatus.PENDING;
+          } else if (data.status === 'SUSPENDED') {
+            parsedAccountStatus = DriverAccountStatus.SUSPENDED;
+          } else {
+            parsedAccountStatus = DriverAccountStatus.ACTIVE;
+          }
+        }
 
         list.push({
           email: doc.id,
@@ -70,9 +85,10 @@ export default function DriverManager() {
           carMaker: data.carMaker || '',
           carModel: data.carModel || '',
           avatar: data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-          status: driverStatus as DriverStatus,
-          working: driverStatus === DriverStatus.IDLE,
-          isWorking: driverStatus === DriverStatus.IN_SERVICE,
+          tripStatus: parsedTripStatus as DriverTripStatus,
+          accountStatus: parsedAccountStatus as DriverAccountStatus,
+          working: parsedTripStatus === DriverTripStatus.IDLE,
+          isWorking: parsedTripStatus === DriverTripStatus.IN_SERVICE,
           createdAt: data.createdAt,
           updatedAt: data.updatedAt
         });
@@ -108,7 +124,8 @@ export default function DriverManager() {
 
   // Filtering States
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [accountFilter, setAccountFilter] = useState<string>('ALL');
+  const [tripFilter, setTripFilter] = useState<string>('ALL');
 
   // Filtering & Sorting Logic
   const filteredDrivers = useMemo(() => {
@@ -120,24 +137,29 @@ export default function DriverManager() {
         (driver.phone || '').toLowerCase().includes(searchLower) ||
         driver.plateNumber.toLowerCase().includes(searchLower);
 
-      let matchesStatus = true;
-      if (statusFilter !== 'ALL') {
-        if (statusFilter === 'ONLINE_IDLE') {
-          matchesStatus = driver.status === DriverStatus.IDLE || driver.status === DriverStatus.IN_QUEUE;
-        } else if (statusFilter === 'BUSY') {
-          matchesStatus = 
-            driver.status === DriverStatus.DISPATCHED ||
-            driver.status === DriverStatus.EN_ROUTE ||
-            driver.status === DriverStatus.ARRIVED ||
-            driver.status === DriverStatus.IN_SERVICE;
+      let matchesAccount = true;
+      if (accountFilter !== 'ALL') {
+        matchesAccount = driver.accountStatus === accountFilter;
+      }
+
+      let matchesTrip = true;
+      if (tripFilter !== 'ALL') {
+        if (tripFilter === 'ONLINE_IDLE') {
+          matchesTrip = driver.tripStatus === DriverTripStatus.IDLE || driver.tripStatus === DriverTripStatus.IN_QUEUE;
+        } else if (tripFilter === 'BUSY') {
+          matchesTrip = 
+            driver.tripStatus === DriverTripStatus.DISPATCHED ||
+            driver.tripStatus === DriverTripStatus.EN_ROUTE ||
+            driver.tripStatus === DriverTripStatus.ARRIVED ||
+            driver.tripStatus === DriverTripStatus.IN_SERVICE;
         } else {
-          matchesStatus = driver.status === statusFilter;
+          matchesTrip = driver.tripStatus === tripFilter;
         }
       }
 
-      return matchesSearch && matchesStatus;
+      return matchesSearch && matchesAccount && matchesTrip;
     });
-  }, [drivers, searchQuery, statusFilter]);
+  }, [drivers, searchQuery, accountFilter, tripFilter]);
 
   const sortedDrivers = useMemo(() => {
     let sortable = [...filteredDrivers];
@@ -213,7 +235,8 @@ export default function DriverManager() {
     setCarColor('黃');
     setCarMaker('Toyota');
     setCarModel('Sienta');
-    setStatus(DriverStatus.OFFLINE);
+    setTripStatus(DriverTripStatus.OFFLINE);
+    setAccountStatus(DriverAccountStatus.PENDING);
     setError(null);
     setShowModal(true);
   };
@@ -227,7 +250,8 @@ export default function DriverManager() {
     setCarColor(driver.carColor || '');
     setCarMaker(driver.carMaker || '');
     setCarModel(driver.carModel || '');
-    setStatus(driver.status);
+    setTripStatus(driver.tripStatus);
+    setAccountStatus(driver.accountStatus);
     setError(null);
     setShowModal(true);
   };
@@ -253,7 +277,8 @@ export default function DriverManager() {
         carColor: carColor.trim(),
         carMaker: carMaker.trim(),
         carModel: carModel.trim(),
-        status: status,
+        tripStatus: tripStatus,
+        accountStatus: accountStatus,
         updatedAt: new Date()
       };
 
@@ -290,31 +315,43 @@ export default function DriverManager() {
     }
   };
 
-  const getDriverStatusText = (driver: Driver) => {
-    switch (driver.status) {
-      case DriverStatus.OFFLINE: return '已下線';
-      case DriverStatus.IDLE: return '上線空車';
-      case DriverStatus.IN_QUEUE: return '排班中';
-      case DriverStatus.DISPATCHED: return '媒合中';
-      case DriverStatus.EN_ROUTE: return '前往接客';
-      case DriverStatus.ARRIVED: return '抵達乘客點';
-      case DriverStatus.IN_SERVICE: return '載客中';
-      case DriverStatus.SUSPENDED: return '限制停權';
-      case DriverStatus.WAIT_APPROVAL: return '等待開通';
+  const getDriverAccountStatusText = (driver: Driver) => {
+    switch (driver.accountStatus) {
+      case DriverAccountStatus.PENDING: return '等待開通';
+      case DriverAccountStatus.ACTIVE: return '正常啟用';
+      case DriverAccountStatus.SUSPENDED: return '限制停權';
+      default: return '正常啟用';
+    }
+  };
+
+  const getDriverAccountStatusClass = (driver: Driver) => {
+    switch (driver.accountStatus) {
+      case DriverAccountStatus.ACTIVE: return 'status-pill online';
+      case DriverAccountStatus.PENDING: return 'status-pill pending';
+      case DriverAccountStatus.SUSPENDED: return 'status-pill offline';
+      default: return 'status-pill online';
+    }
+  };
+
+  const getDriverTripStatusText = (driver: Driver) => {
+    switch (driver.tripStatus) {
+      case DriverTripStatus.OFFLINE: return '已下線';
+      case DriverTripStatus.IDLE: return '上線空車';
+      case DriverTripStatus.IN_QUEUE: return '排班中';
+      case DriverTripStatus.DISPATCHED: return '媒合中';
+      case DriverTripStatus.EN_ROUTE: return '前往接客';
+      case DriverTripStatus.ARRIVED: return '抵達乘客點';
+      case DriverTripStatus.IN_SERVICE: return '載客中';
       default: return '已下線';
     }
   };
 
-  const getDriverStatusClass = (driver: Driver) => {
-    switch (driver.status) {
-      case DriverStatus.OFFLINE: return 'status-pill offline';
-      case DriverStatus.IDLE:
-      case DriverStatus.IN_QUEUE:
+  const getDriverTripStatusClass = (driver: Driver) => {
+    switch (driver.tripStatus) {
+      case DriverTripStatus.OFFLINE: return 'status-pill offline';
+      case DriverTripStatus.IDLE:
+      case DriverTripStatus.IN_QUEUE:
         return 'status-pill online';
-      case DriverStatus.SUSPENDED:
-        return 'status-pill offline';
-      case DriverStatus.WAIT_APPROVAL:
-        return 'status-pill pending';
       default:
         return 'status-pill busy';
     }
@@ -349,12 +386,12 @@ export default function DriverManager() {
               />
             </div>
 
-            {/* Status Filter */}
+            {/* Account Status Filter */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              <span>狀態篩選:</span>
+              <span>帳號狀態:</span>
               <select 
-                value={statusFilter}
-                onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+                value={accountFilter}
+                onChange={(e) => { setAccountFilter(e.target.value); setCurrentPage(1); }}
                 style={{
                   background: 'rgba(255, 255, 255, 0.03)',
                   border: '1px solid var(--border-color)',
@@ -366,19 +403,41 @@ export default function DriverManager() {
                   cursor: 'pointer'
                 }}
               >
-                <option value="ALL" style={{ background: '#0c0d14' }}>全部狀態</option>
-                <option value="ONLINE_IDLE" style={{ background: '#0c0d14' }}>上線空車 (IDLE/熱區排班)</option>
-                <option value="BUSY" style={{ background: '#0c0d14' }}>載客忙碌中 (接單前往/載客中)</option>
+                <option value="ALL" style={{ background: '#0c0d14' }}>全部帳號狀態</option>
+                <option value="PENDING" style={{ background: '#0c0d14' }}>等待開通 (PENDING)</option>
+                <option value="ACTIVE" style={{ background: '#0c0d14' }}>啟用正常 (ACTIVE)</option>
+                <option value="SUSPENDED" style={{ background: '#0c0d14' }}>限制停權 (SUSPENDED)</option>
+              </select>
+            </div>
+
+            {/* Trip Status Filter */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              <span>行程狀態:</span>
+              <select 
+                value={tripFilter}
+                onChange={(e) => { setTripFilter(e.target.value); setCurrentPage(1); }}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 6,
+                  padding: '6px 12px',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.8rem',
+                  outline: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="ALL" style={{ background: '#0c0d14' }}>全部行程狀態</option>
                 <option value="OFFLINE" style={{ background: '#0c0d14' }}>已下線 (OFFLINE)</option>
-                <option value="SUSPENDED" style={{ background: '#0c0d14' }}>限制停權中 (SUSPENDED)</option>
-                <option value="WAIT_APPROVAL" style={{ background: '#0c0d14' }}>等待開通中 (WAIT_APPROVAL)</option>
+                <option value="ONLINE_IDLE" style={{ background: '#0c0d14' }}>空車候客 (IDLE/排班中)</option>
+                <option value="BUSY" style={{ background: '#0c0d14' }}>載客忙碌 (媒合/載客中)</option>
               </select>
             </div>
           </div>
 
           {filteredDrivers.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-              {searchQuery || statusFilter !== 'ALL' ? '找不到符合篩選條件的司機。' : '目前尚無註冊司機。'}
+              {searchQuery || accountFilter !== 'ALL' || tripFilter !== 'ALL' ? '找不到符合篩選條件的司機。' : '目前尚無註冊司機。'}
             </div>
           ) : (
             <div className="admin-table-container">
@@ -390,7 +449,8 @@ export default function DriverManager() {
                     <th style={{ cursor: 'pointer' }} onClick={() => requestSort('phone')}>聯絡電話 {getSortIcon('phone')}</th>
                     <th style={{ cursor: 'pointer' }} onClick={() => requestSort('plateNumber')}>車牌號碼 {getSortIcon('plateNumber')}</th>
                     <th style={{ cursor: 'pointer' }} onClick={() => requestSort('carMaker')}>車款車色 {getSortIcon('carMaker')}</th>
-                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('status')}>即時狀態 {getSortIcon('status')}</th>
+                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('accountStatus')}>帳號狀態 {getSortIcon('accountStatus')}</th>
+                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('tripStatus')}>工作行程 {getSortIcon('tripStatus')}</th>
                     <th>操作</th>
                   </tr>
                 </thead>
@@ -422,8 +482,13 @@ export default function DriverManager() {
                     {driver.carColor}色 {driver.carMaker} {driver.carModel}
                   </td>
                   <td>
-                    <span className={getDriverStatusClass(driver)}>
-                      {getDriverStatusText(driver)}
+                    <span className={getDriverAccountStatusClass(driver)}>
+                      {getDriverAccountStatusText(driver)}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={getDriverTripStatusClass(driver)}>
+                      {getDriverTripStatusText(driver)}
                     </span>
                   </td>
                   <td>
@@ -627,29 +692,54 @@ export default function DriverManager() {
                 </div>
               </div>
 
-              <div className="form-group">
-                <label className="form-label">服務狀態</label>
-                <select 
-                  value={status} 
-                  onChange={(e) => setStatus(e.target.value as DriverStatus)}
-                  className="form-select"
-                  style={{
-                    background: 'rgba(255, 255, 255, 0.03)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: 'var(--radius-sm)',
-                    padding: '8px 12px',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.85rem',
-                    outline: 'none'
-                  }}
-                >
-                  <option value={DriverStatus.IDLE} style={{ background: '#0c0d14' }}>空車服務中 (IDLE)</option>
-                  <option value={DriverStatus.IN_QUEUE} style={{ background: '#0c0d14' }}>排班等待中 (IN_QUEUE)</option>
-                  <option value={DriverStatus.IN_SERVICE} style={{ background: '#0c0d14' }}>載客忙碌中 (IN_SERVICE)</option>
-                  <option value={DriverStatus.OFFLINE} style={{ background: '#0c0d14' }}>下線休息中 (OFFLINE)</option>
-                  <option value={DriverStatus.SUSPENDED} style={{ background: '#0c0d14' }}>限制停權中 (SUSPENDED)</option>
-                  <option value={DriverStatus.WAIT_APPROVAL} style={{ background: '#0c0d14' }}>等待開通中 (WAIT_APPROVAL)</option>
-                </select>
+              <div className="form-row" style={{ gap: 16 }}>
+                <div className="form-group">
+                  <label className="form-label">帳號狀態</label>
+                  <select 
+                    value={accountStatus} 
+                    onChange={(e) => setAccountStatus(e.target.value as DriverAccountStatus)}
+                    className="form-select"
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '8px 12px',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.85rem',
+                      outline: 'none'
+                    }}
+                  >
+                    <option value={DriverAccountStatus.PENDING} style={{ background: '#0c0d14' }}>等待開通 (PENDING)</option>
+                    <option value={DriverAccountStatus.ACTIVE} style={{ background: '#0c0d14' }}>啟用正常 (ACTIVE)</option>
+                    <option value={DriverAccountStatus.SUSPENDED} style={{ background: '#0c0d14' }}>限制停權 (SUSPENDED)</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">行程狀態</label>
+                  <select 
+                    value={tripStatus} 
+                    onChange={(e) => setTripStatus(e.target.value as DriverTripStatus)}
+                    className="form-select"
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '8px 12px',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.85rem',
+                      outline: 'none'
+                    }}
+                  >
+                    <option value={DriverTripStatus.OFFLINE} style={{ background: '#0c0d14' }}>已下線 (OFFLINE)</option>
+                    <option value={DriverTripStatus.IDLE} style={{ background: '#0c0d14' }}>上線空車 (IDLE)</option>
+                    <option value={DriverTripStatus.IN_QUEUE} style={{ background: '#0c0d14' }}>排班中 (IN_QUEUE)</option>
+                    <option value={DriverTripStatus.DISPATCHED} style={{ background: '#0c0d14' }}>媒合中 (DISPATCHED)</option>
+                    <option value={DriverTripStatus.EN_ROUTE} style={{ background: '#0c0d14' }}>接送前往 (EN_ROUTE)</option>
+                    <option value={DriverTripStatus.ARRIVED} style={{ background: '#0c0d14' }}>抵達點 (ARRIVED)</option>
+                    <option value={DriverTripStatus.IN_SERVICE} style={{ background: '#0c0d14' }}>載客中 (IN_SERVICE)</option>
+                  </select>
+                </div>
               </div>
 
               <div className="modal-footer">

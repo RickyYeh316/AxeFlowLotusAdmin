@@ -5,7 +5,7 @@ import { db } from '../firebase/config';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { APIProvider, Map, useMap, AdvancedMarker } from '@vis.gl/react-google-maps';
 import { mapStyles } from '../data/mapStyles';
-import { Driver, Order, DriverStatus } from '../types';
+import { Driver, Order, DriverTripStatus, DriverAccountStatus } from '../types';
 import { MapPin, Compass, Info, TrafficCone, Layers, Award, Phone, Shield } from 'lucide-react';
 import { MockMap } from './MockMap'; // We will create this as a separate file to keep this clean
 
@@ -65,11 +65,24 @@ export default function DispatchMap({ apiKey }: DispatchMapProps) {
       const list: Driver[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
-        let driverStatus = data.status || DriverStatus.OFFLINE;
-        // Robust converter for old numeric statuses
-        if (driverStatus === 0 || driverStatus === '0') driverStatus = DriverStatus.OFFLINE;
-        else if (driverStatus === 1 || driverStatus === '1') driverStatus = DriverStatus.IDLE;
-        else if (driverStatus === 2 || driverStatus === '2') driverStatus = DriverStatus.IN_SERVICE;
+        // 1. Parsing Trip Status with migration fallbacks
+        let parsedTripStatus = data.tripStatus || data.status || DriverTripStatus.OFFLINE;
+        if (parsedTripStatus === 0 || parsedTripStatus === '0') parsedTripStatus = DriverTripStatus.OFFLINE;
+        else if (parsedTripStatus === 1 || parsedTripStatus === '1') parsedTripStatus = DriverTripStatus.IDLE;
+        else if (parsedTripStatus === 2 || parsedTripStatus === '2') parsedTripStatus = DriverTripStatus.IN_SERVICE;
+        else if (parsedTripStatus === 'SUSPENDED' || parsedTripStatus === 'WAIT_APPROVAL') parsedTripStatus = DriverTripStatus.OFFLINE;
+
+        // 2. Parsing Account Status with migration fallbacks
+        let parsedAccountStatus = data.accountStatus;
+        if (!parsedAccountStatus) {
+          if (data.status === 'WAIT_APPROVAL') {
+            parsedAccountStatus = DriverAccountStatus.PENDING;
+          } else if (data.status === 'SUSPENDED') {
+            parsedAccountStatus = DriverAccountStatus.SUSPENDED;
+          } else {
+            parsedAccountStatus = DriverAccountStatus.ACTIVE;
+          }
+        }
 
         list.push({
           email: doc.id,
@@ -82,9 +95,10 @@ export default function DispatchMap({ apiKey }: DispatchMapProps) {
           carMaker: data.carMaker || '',
           carModel: data.carModel || '',
           avatar: data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-          status: driverStatus as DriverStatus,
-          working: driverStatus === DriverStatus.IDLE,
-          isWorking: driverStatus === DriverStatus.IN_SERVICE,
+          tripStatus: parsedTripStatus as DriverTripStatus,
+          accountStatus: parsedAccountStatus as DriverAccountStatus,
+          working: parsedTripStatus === DriverTripStatus.IDLE,
+          isWorking: parsedTripStatus === DriverTripStatus.IN_SERVICE,
           loginCount: data.loginCount || 0,
           currentLocation: data.currentLocation ? {
             lat: data.currentLocation.lat,
@@ -125,10 +139,10 @@ export default function DispatchMap({ apiKey }: DispatchMapProps) {
   const hasValidKey = apiKey && apiKey.startsWith('AIzaSy');
 
   const getMarkerBgColor = (driver: Driver) => {
-    if (driver.status === DriverStatus.OFFLINE) return '#6b7280'; // Gray
-    if (driver.status === DriverStatus.SUSPENDED) return '#eab308'; // Yellow
-    if (driver.status === DriverStatus.WAIT_APPROVAL) return '#818cf8'; // Indigo for Wait Approval
-    if (driver.status === DriverStatus.IDLE || driver.status === DriverStatus.IN_QUEUE) return '#10b981'; // Green
+    if (driver.accountStatus === DriverAccountStatus.SUSPENDED) return '#eab308'; // Yellow for Suspended
+    if (driver.accountStatus === DriverAccountStatus.PENDING) return '#818cf8'; // Indigo for Pending
+    if (driver.tripStatus === DriverTripStatus.OFFLINE) return '#6b7280'; // Gray for Offline
+    if (driver.tripStatus === DriverTripStatus.IDLE || driver.tripStatus === DriverTripStatus.IN_QUEUE) return '#10b981'; // Green for Idle
     return '#ef4444'; // Red for Busy
   };
 
@@ -302,9 +316,9 @@ export default function DispatchMap({ apiKey }: DispatchMapProps) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {drivers.map((driver) => {
               const isSelected = selectedDriver?.email === driver.email;
-              const isBusy = driver.status !== DriverStatus.IDLE && driver.status !== DriverStatus.IN_QUEUE && driver.status !== DriverStatus.OFFLINE;
-              const statusText = driver.status === DriverStatus.OFFLINE ? '已下線' : isBusy ? '載客中' : '空車中';
-              const statusClass = driver.status === DriverStatus.OFFLINE ? 'status-pill offline' : isBusy ? 'status-pill busy' : 'status-pill online';
+              const isBusy = driver.tripStatus !== DriverTripStatus.IDLE && driver.tripStatus !== DriverTripStatus.IN_QUEUE && driver.tripStatus !== DriverTripStatus.OFFLINE;
+              const statusText = driver.accountStatus === DriverAccountStatus.SUSPENDED ? '停權中' : driver.tripStatus === DriverTripStatus.OFFLINE ? '已下線' : isBusy ? '載客中' : '空車中';
+              const statusClass = driver.accountStatus === DriverAccountStatus.SUSPENDED ? 'status-pill offline' : driver.tripStatus === DriverTripStatus.OFFLINE ? 'status-pill offline' : isBusy ? 'status-pill busy' : 'status-pill online';
 
               return (
                 <div
