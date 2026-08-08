@@ -127,6 +127,7 @@ export default function DispatchMap({ apiKey }: DispatchMapProps) {
   const getMarkerBgColor = (driver: Driver) => {
     if (driver.status === DriverStatus.OFFLINE) return '#6b7280'; // Gray
     if (driver.status === DriverStatus.SUSPENDED) return '#eab308'; // Yellow
+    if (driver.status === DriverStatus.WAIT_APPROVAL) return '#818cf8'; // Indigo for Wait Approval
     if (driver.status === DriverStatus.IDLE || driver.status === DriverStatus.IN_QUEUE) return '#10b981'; // Green
     return '#ef4444'; // Red for Busy
   };

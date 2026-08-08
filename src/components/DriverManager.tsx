@@ -300,6 +300,7 @@ export default function DriverManager() {
       case DriverStatus.ARRIVED: return '抵達乘客點';
       case DriverStatus.IN_SERVICE: return '載客中';
       case DriverStatus.SUSPENDED: return '限制停權';
+      case DriverStatus.WAIT_APPROVAL: return '等待開通';
       default: return '已下線';
     }
   };
@@ -312,6 +313,8 @@ export default function DriverManager() {
         return 'status-pill online';
       case DriverStatus.SUSPENDED:
         return 'status-pill offline';
+      case DriverStatus.WAIT_APPROVAL:
+        return 'status-pill pending';
       default:
         return 'status-pill busy';
     }
@@ -368,6 +371,7 @@ export default function DriverManager() {
                 <option value="BUSY" style={{ background: '#0c0d14' }}>載客忙碌中 (接單前往/載客中)</option>
                 <option value="OFFLINE" style={{ background: '#0c0d14' }}>已下線 (OFFLINE)</option>
                 <option value="SUSPENDED" style={{ background: '#0c0d14' }}>限制停權中 (SUSPENDED)</option>
+                <option value="WAIT_APPROVAL" style={{ background: '#0c0d14' }}>等待開通中 (WAIT_APPROVAL)</option>
               </select>
             </div>
           </div>
@@ -644,6 +648,7 @@ export default function DriverManager() {
                   <option value={DriverStatus.IN_SERVICE} style={{ background: '#0c0d14' }}>載客忙碌中 (IN_SERVICE)</option>
                   <option value={DriverStatus.OFFLINE} style={{ background: '#0c0d14' }}>下線休息中 (OFFLINE)</option>
                   <option value={DriverStatus.SUSPENDED} style={{ background: '#0c0d14' }}>限制停權中 (SUSPENDED)</option>
+                  <option value={DriverStatus.WAIT_APPROVAL} style={{ background: '#0c0d14' }}>等待開通中 (WAIT_APPROVAL)</option>
                 </select>
               </div>
 

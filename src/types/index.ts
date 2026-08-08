@@ -24,6 +24,7 @@ export enum DriverStatus {
   ARRIVED = "ARRIVED", // 抵達上車點
   IN_SERVICE = "IN_SERVICE", // 載客中
   SUSPENDED = "SUSPENDED", // 後台停權
+  WAIT_APPROVAL = "WAIT_APPROVAL", // 新司機，等待開通
 }
 
 export enum UserStatus {

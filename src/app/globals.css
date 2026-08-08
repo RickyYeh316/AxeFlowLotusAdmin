@@ -449,6 +449,12 @@ html, body {
   border: 1px solid var(--border-color);
 }
 
+.status-pill.pending {
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--color-primary);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
 .type-tag {
   font-size: 0.75rem;
   font-weight: 700;
