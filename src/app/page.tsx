@@ -184,19 +184,6 @@ export default function Home() {
     }
   };
 
-  const getTabTitle = () => {
-    switch (activeTab) {
-      case 'overview': return '儀表板總覽';
-      case 'dispatch': return '派車現況';
-      case 'drivers': return '司機管理';
-      case 'users': return '乘客管理';
-      case 'orders': return '訂單管理';
-      case 'marketing': return '優惠券管理';
-      case 'admins': return '管理者管理';
-      default: return 'Lotus Admin';
-    }
-  };
-
   return (
     <div className={`admin-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       {/* 1. Sidebar Left */}
@@ -305,19 +292,6 @@ export default function Home() {
 
       {/* 2. Workspace Right */}
       <main className="admin-workspace">
-        {activeTab !== 'dispatch' && (
-          <header className="workspace-header">
-            <h1 className="header-title">{getTabTitle()}</h1>
-            <div className="header-actions">
-              {/* Display Firebase project status */}
-              <div className="glass" style={{ padding: '6px 12px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--color-success)', display: 'inline-block' }}></span>
-                <span>已連接: axeflowlotus-6dc3b</span>
-              </div>
-            </div>
-          </header>
-        )}
-
         {/* Tabs Bar */}
         <div className="workspace-tabs-bar">
           {openTabs.map((tabId) => {
