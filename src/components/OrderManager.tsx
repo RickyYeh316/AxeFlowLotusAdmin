@@ -553,7 +553,7 @@ export default function OrderManager() {
       <div className="glass content-sheet animate-fade-in">
       <div className="sheet-title-row">
         <div>
-          <h2 className="sheet-title">叫車訂單管理 ({filteredOrders.length})</h2>
+          <h2 className="sheet-title">訂單管理 ({filteredOrders.length})</h2>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <button onClick={() => setStatusFilter('all')} className={`category-pill ${statusFilter === 'all' ? 'active' : ''}`}>全部訂單</button>
             <button onClick={() => setStatusFilter('active')} className={`category-pill ${statusFilter === 'active' ? 'active' : ''}`}>進行中</button>

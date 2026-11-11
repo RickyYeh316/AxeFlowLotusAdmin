@@ -1,0 +1,18 @@
+{
+  "apphosting": [
+    {
+      "backendId": "axeflow-lotus-admin",
+      "rootDir": ".",
+      "alwaysDeployFromSource": true,
+      "ignore": [
+        "node_modules",
+        ".git",
+        ".next",
+        ".env*",
+        "*.tsbuildinfo",
+        "firebase-debug.log",
+        "firebase-debug.*.log"
+      ]
+    }
+  ]
+}

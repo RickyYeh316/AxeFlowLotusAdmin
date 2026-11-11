@@ -227,9 +227,9 @@ export default function UserManager() {
     <div className="glass content-sheet animate-fade-in">
       <div className="sheet-title-row">
         <div>
-          <h2 className="sheet-title">註冊乘客管理 ({filteredUsers.length})</h2>
+          <h2 className="sheet-title">乘客管理 ({filteredUsers.length})</h2>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 4 }}>
-            所有透過 LINE LIFF 授權登入的乘車用戶
+            所有透過 LINE LIFF 授權登入的乘客
           </p>
         </div>
         
@@ -287,7 +287,7 @@ export default function UserManager() {
               type="text" 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜尋乘客姓名、電話、LINE ID..." 
+              placeholder="搜尋姓名、電話或乘客編號"
               className="search-input"
             />
           </div>
@@ -306,7 +306,7 @@ export default function UserManager() {
             <thead>
               <tr>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('name')}>乘客名稱 {getSortIcon('name')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('userId')}>LINE 用戶識別碼 (userId) {getSortIcon('userId')}</th>
+                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('userId')}>乘客編號 {getSortIcon('userId')}</th>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('phoneNumber')}>聯絡電話 {getSortIcon('phoneNumber')}</th>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('accountStatus')}>帳號權限 {getSortIcon('accountStatus')}</th>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('tripStatus')}>叫車行程 {getSortIcon('tripStatus')}</th>

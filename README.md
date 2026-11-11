@@ -19,7 +19,7 @@
 
 原 Ricky 負責 AH Web 管理介面；現由 Ready＋AI Agent 延續開發到商轉。客戶商務邏輯由 Ready 提供與確認，Agent 將規則落成共同文件、程式與驗證；既有 AH 實作須對照共同定義與現行後端契約。LIFF 乘客端維持 H＋LINE Login。
 
-AH 功能完成度、線上部署與實際接線仍須盤點；既有 H `/ops/` 保留，正式入口切換方式另定。詳見 `<Lotus root>/02_現行定義/webAdmin規劃.md`。
+AH 既有畫面與讀寫流程已於 11/11 初步盤點；登入門禁、正式狀態與交易接線仍待分批對齊。既有 H `/ops/` 保留，入口切換方式另定。詳見 `<Lotus root>/02_現行定義/webAdmin規劃.md`。
 
 ## 本端程式入口
 
@@ -27,8 +27,15 @@ AH 功能完成度、線上部署與實際接線仍須盤點；既有 H `/ops/` 
 - `src/components/`：登入、管理與地圖等元件；依任務查閱相關實作。
 - `src/firebase/config.ts`：本端 Firebase 設定入口。
 - `src/types/index.ts`：本端型別；跨端契約仍須對照 FBase Lotus 與共同定義。
-- `apphosting.yaml`、`.gitlab-ci.yml`：部署／CI 設定檔；檔案存在不作線上運作證據。
+- `apphosting.yaml`：既有建置環境與執行資源設定；`firebase.json`：本機 source 部署到既有管理 backend。`.gitlab-ci.yml` 的 CI 執行狀態另行查核。
 - `package.json`、`package-lock.json`：依賴版本與執行命令來源。
+
+## 優惠券管理（11/11）
+
+- `MarketingManager.tsx`：新增優惠券草稿、草稿編輯／刪除、Type1設定與啟停、Type3指定乘客發券、目前／歷史列表；Type2全體發券下一批。
+- `src/lib/adminApi.ts`：Google Firebase token呼叫asia-east1的webAdmin；固定AH Origin由後端允許。券模板不再由Client寫Firestore，規則／交易請對照FBase Lotus functions/src/admin／coupons README。
+- 每次mutation保留operationId與完整請求於sessionStorage；連線結果待確認時鎖定其他異動，可重試原操作，重整／換頁仍可恢復。不要手動清除待確認操作後重發券。
+- 依賴與正式建置完成後，以Node22執行`node tests/coupon-manager.browser.cjs`；真實headless Chrome使用隔離Auth／HTTP fixture、實際元件／API模組及建置CSS，測草稿、連發、回應遺失重送、歷史分類、長名稱、窄螢幕與登出晚回覆。輸出及截圖存於/private/tmp，不操作正式資料。
 
 ## 本機開發與驗證
 
@@ -41,6 +48,15 @@ AH 功能完成度、線上部署與實際接線仍須盤點；既有 H `/ops/` 
 | `npm run build` | Next.js 建置 |
 | `npm run start` | 啟動已建置的應用程式 |
 
-以上是 package scripts，尚未在本輪文件整理中執行。依變更選擇驗證；不因閱讀文件而啟動服務或部署。部署與雲端資料操作依 Ready 當次授權，Git 寫入一律由 Ready 處理。
+11/11 使用 lockfile 執行 `npm ci`，並以 `apphosting.yaml` 的 BUILD 公開設定注入程序環境後，`npm run build`（Next.js 16.2.12／TypeScript）通過。一般 shell 預設 Node 14 過舊，本次使用已安裝 Node 22.11.0；npm 對 eslint-visitor-keys 的 Node 版本有警告，未執行或宣稱 lint 通過。環境設定勿存入版控；部署與雲端資料操作依 Ready 當次授權，Git 寫入一律由 Ready 處理。
+
+## 本機 source 部署入口
+
+- Firebase project：`axeflowlotus-6dc3b`；region：`asia-east1`；backend：`axeflow-lotus-admin`。
+- 管理端網址：https://axeflow-lotus-admin--axeflowlotus-6dc3b.asia-east1.hosted.app
+- `firebase.json` 僅列管理 backend，排除 node_modules、.next、.git、環境檔與部署 log；`alwaysDeployFromSource` 表示以本機內容發布。
+- 經 Ready 授權後，於本 repo 執行：`firebase deploy --only apphosting:axeflow-lotus-admin --project axeflowlotus-6dc3b --non-interactive`。
+- 既有 GitHub main 連結與 rollout policy 保留；後續遠端更新可能發布該來源版本，本機修改仍由 Ready 自行提交與同步。
+- 此命令只指定 AH 管理端。發布後核對 build／rollout、100% 流量與線上資產；最新結果見共同 root 的交接及當日日誌。
 
 共同文件回 root 維護，過去工作日誌與封存附件唯讀。

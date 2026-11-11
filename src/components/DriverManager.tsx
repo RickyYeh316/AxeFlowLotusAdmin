@@ -361,7 +361,7 @@ export default function DriverManager() {
     <>
       <div className="glass content-sheet animate-fade-in">
       <div className="sheet-title-row">
-        <h2 className="sheet-title">司機名冊管理 ({drivers.length})</h2>
+        <h2 className="sheet-title">司機管理 ({drivers.length})</h2>
         <button onClick={openAddModal} className="btn-primary">
           <Plus size={16} />
           註冊新司機

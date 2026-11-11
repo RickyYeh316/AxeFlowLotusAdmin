@@ -309,7 +309,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
               2. <b>手動指派</b>: 在「訂單管理」分頁，可手動為任何乘客指派特定上線司機。
             </p>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-              3. <b>行銷折扣</b>: 「行銷管理」可直接新增優惠券，乘客綁定 LIFF 即會於註冊時自動獲得。
+              3. <b>行銷折扣</b>: 「優惠券管理」可建立草稿；新戶券依設定自動配發，補償券由管理員選擇乘客發送。
             </p>
           </div>
         </div>

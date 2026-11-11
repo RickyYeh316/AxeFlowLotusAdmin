@@ -209,7 +209,7 @@ export default function AdminManager({ currentAdminEmail }: AdminManagerProps) {
       <div className="glass content-sheet animate-fade-in" style={{ maxWidth: 720 }}>
       <div className="sheet-title-row">
         <div>
-          <h2 className="sheet-title">後台系統管理員 ({admins.length})</h2>
+          <h2 className="sheet-title">管理者管理 ({admins.length})</h2>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 4 }}>
             只有此名冊中的 Google 帳號 Email 能成功登入後台管理系統
           </p>

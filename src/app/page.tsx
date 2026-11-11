@@ -134,14 +134,14 @@ export default function Home() {
 
   const getTabLabel = (tabId: string) => {
     switch (tabId) {
-      case 'overview': return '儀表板';
+      case 'overview': return '儀表板總覽';
       case 'dispatch': return '派車現況';
       case 'drivers': return '司機管理';
-      case 'users': return '使用者';
+      case 'users': return '乘客管理';
       case 'orders': return '訂單管理';
-      case 'marketing': return '行銷活動';
-      case 'admins': return '權限管理';
-      default: return '儀表板';
+      case 'marketing': return '優惠券管理';
+      case 'admins': return '管理者管理';
+      default: return '儀表板總覽';
     }
   };
 
@@ -187,12 +187,12 @@ export default function Home() {
   const getTabTitle = () => {
     switch (activeTab) {
       case 'overview': return '儀表板總覽';
-      case 'dispatch': return '即時派車監控現況';
-      case 'drivers': return '司機隊伍管理';
-      case 'users': return '註冊用戶管理';
-      case 'orders': return '乘車訂單紀錄與派遣';
-      case 'marketing': return '行銷活動優惠券發行';
-      case 'admins': return '後台管理權限名單';
+      case 'dispatch': return '派車現況';
+      case 'drivers': return '司機管理';
+      case 'users': return '乘客管理';
+      case 'orders': return '訂單管理';
+      case 'marketing': return '優惠券管理';
+      case 'admins': return '管理者管理';
       default: return 'Lotus Admin';
     }
   };
@@ -246,10 +246,10 @@ export default function Home() {
           <button 
             onClick={() => handleNavigate('users')}
             className={`menu-item ${activeTab === 'users' ? 'active' : ''}`}
-            title="使用者管理"
+            title="乘客管理"
           >
             <Users size={18} />
-            {!sidebarCollapsed && <span>使用者管理</span>}
+            {!sidebarCollapsed && <span>乘客管理</span>}
           </button>
           
           <button 
@@ -264,10 +264,10 @@ export default function Home() {
           <button 
             onClick={() => handleNavigate('marketing')}
             className={`menu-item ${activeTab === 'marketing' ? 'active' : ''}`}
-            title="行銷管理"
+            title="優惠券管理"
           >
             <Tag size={18} />
-            {!sidebarCollapsed && <span>行銷管理</span>}
+            {!sidebarCollapsed && <span>優惠券管理</span>}
           </button>
           
           <button 
@@ -332,7 +332,7 @@ export default function Home() {
                 {getTabIcon(tabId)}
                 <span className="tab-label">{getTabLabel(tabId)}</span>
                 {openTabs.length > 1 && (
-                  <button onClick={(e) => handleCloseTab(e, tabId)} className="tab-close-btn" title="關閉分頁">
+                  <button onClick={(e) => handleCloseTab(e, tabId)} className="tab-close-btn" type="button" title="關閉分頁" aria-label={`關閉${getTabLabel(tabId)}分頁`}>
                     <X size={10} />
                   </button>
                 )}
