@@ -1082,3 +1082,8 @@ body.modal-open .workspace-tabs-bar {
   .coupon-modal { min-width: 0; max-width: 100%; padding: 20px; }
   .coupon-modal input, .coupon-modal select, .coupon-modal textarea { min-width: 0; width: 100%; }
 }
+
+.coupon-notify { display: flex; align-items: center; gap: 10px; margin-top: 20px; cursor: pointer; }
+.coupon-modal .coupon-notify input { width: 20px; height: 20px; flex: 0 0 auto; accent-color: var(--color-primary); }
+.coupon-preview { margin-top: 12px; padding: 16px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: rgba(255,255,255,0.025); }
+.coupon-preview-text { margin: 12px 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }

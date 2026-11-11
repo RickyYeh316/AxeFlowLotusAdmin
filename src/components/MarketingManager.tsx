@@ -9,7 +9,7 @@ import { adminApi, AdminApiError } from '../lib/adminApi';
 type Version = { seconds: number; nanoseconds: number };
 type Distribution = { state: 'PENDING' | 'FAILED' | 'COMPLETED'; issuedCount: number; skippedCount: number; lastError: string };
 type CouponRow = { id: string; type: number | null; title: string; description: string; discountAmount: number;
-  status: string; startDate: string; endDate: string; expiresAtMillis: number | null; version: Version; distribution?: Distribution | null };
+  status: string; startDate: string; endDate: string; expiresAtMillis: number | null; version: Version; notificationPreview?: string | null; distribution?: Distribution | null };
 type Passenger = { id: string; name: string; phoneNumber: string; accountStatus: string; isNPC: boolean; lineUid: string };
 type Form = { type: number; title: string; description: string; discountAmount: string; startDate: string; endDate: string };
 type Request = Record<string, unknown>;
@@ -25,6 +25,7 @@ export default function MarketingManager() {
   const [sort, setSort] = useState<{ key: 'title' | 'type' | 'discountAmount' | 'startDate' | 'endDate'; ascending: boolean }>({ key: 'title', ascending: true });
   const [editing, setEditing] = useState<CouponRow | null | undefined>(undefined), [form, setForm] = useState<Form>(emptyForm);
   const [issuing, setIssuing] = useState<CouponRow | null>(null), [passengers, setPassengers] = useState<Passenger[]>([]);
+  const [notifyPassenger, setNotifyPassenger] = useState(true);
   const [search, setSearch] = useState(''), [selected, setSelected] = useState(''), [membersLoading, setMembersLoading] = useState(false);
   const [busy, setBusy] = useState(false), [pending, setPending] = useState<Request | null>(null);
   const scope = useRef(0), requestLock = useRef(false), listSequence = useRef(0), listInFlight = useRef(false);
@@ -113,7 +114,7 @@ export default function MarketingManager() {
   }
   async function choosePassenger(row: CouponRow) {
     const generation = scope.current;
-    setIssuing(row); setSelected(''); setSearch(''); setPassengers([]); setMembersLoading(true); setError(''); setNotice('');
+    setIssuing(row); setNotifyPassenger(true); setSelected(''); setSearch(''); setPassengers([]); setMembersLoading(true); setError(''); setNotice('');
     if (row.type === 2) { setMembersLoading(false); return; }
     try {
       const all: Passenger[] = []; let after: string | null = null;
@@ -200,17 +201,17 @@ export default function MarketingManager() {
         <button className="tab-close-btn" aria-label="關閉" disabled={disabled} onClick={close}><X size={18} /></button></div>
       {feedback}
       {issuing ? <form onSubmit={e => {
-        e.preventDefault(); if (disabled) return;
+        e.preventDefault(); if (disabled || (notifyPassenger && !issuing.notificationPreview)) return;
         if (issuing.type === 2) {
-          if (window.confirm(`發送「${issuing.title}」${issuing.discountAmount}元券給全體有效乘客，每人一張？此活動只能發一次，發出後不回收。`)) void action(issuing, 'COUPON_PUBLISH');
+          if (window.confirm(`發送「${issuing.title}」${issuing.discountAmount}元券給全體有效乘客，每人一張？此活動只能發一次，發出後不回收。`)) void action(issuing, 'COUPON_PUBLISH', { notifyPassenger });
           return;
         }
         if (!recipient) return;
-        if (window.confirm(`發送「${issuing.title}」${issuing.discountAmount}元券一張給「${recipient.name}」？發出後不回收。`)) void action(issuing, 'COUPON_ISSUE', { userId: selected });
+        if (window.confirm(`發送「${issuing.title}」${issuing.discountAmount}元券一張給「${recipient.name}」？發出後不回收。`)) void action(issuing, 'COUPON_ISSUE', { userId: selected, notifyPassenger });
       }}>
         <p><strong>{issuing.title}</strong> · 折抵 {issuing.discountAmount} 元</p>
         <p className="coupon-help">{issuing.startDate} ～ {issuing.endDate}（台灣時間）</p>
-        {issuing.type === 2 ? <p className="coupon-help">每位正式有效乘客各一張；停權、已刪除與測試帳號略過。開始發券後的新戶不補發。此活動只能發一次，發出後不回收。<br />發券在背景處理，可關閉此頁；LINE 通知尚未提供。</p> : <>
+        {issuing.type === 2 ? <p className="coupon-help">每位正式有效乘客各一張；停權、已刪除與測試帳號略過。開始發券後的新戶不補發。此活動只能發一次，發出後不回收。<br />發券在背景處理，可關閉此頁。</p> : <>
         <p className="coupon-help">每次確認發送一張；同一乘客可再次獲得，發出後不回收。</p>
         <label className="form-group">搜尋乘客<input className="form-input" value={search} disabled={disabled} onChange={e => setSearch(e.target.value)} placeholder="姓名、電話或乘客編號" /></label>
         {membersLoading ? <p>載入乘客中…</p> : <label className="form-group">選擇乘客<select className="form-select" required value={selected} disabled={disabled} onChange={e => setSelected(e.target.value)}>
@@ -218,7 +219,13 @@ export default function MarketingManager() {
           {recipient && !memberMatches.some(p => p.id === recipient.id) && <option value={recipient.id}>{recipient.name}（已選擇）</option>}
           {memberMatches.map(p => <option key={p.id} value={p.id}>{p.name || '未命名'} · {p.phoneNumber || p.id}</option>)}
         </select></label>}</>}
-        <div className="modal-footer"><button type="button" className="btn-secondary" disabled={disabled} onClick={close}>取消</button><button className="btn-primary" disabled={disabled || (issuing.type !== 2 && (membersLoading || !recipient))}>確認發券</button></div>
+        <label className="coupon-notify"><input type="checkbox" checked={notifyPassenger} disabled={disabled} onChange={e => setNotifyPassenger(e.target.checked)} />通知乘客</label>
+        {notifyPassenger && <section className="coupon-preview" aria-label="LINE 訊息預覽">
+          <p className="coupon-help">LINE 訊息預覽</p>
+          <p className="coupon-preview-text">{issuing.notificationPreview || '訊息預覽尚未取得，請關閉後重新整理。'}</p>
+          <p className="coupon-help">配券成功後發送；通知失敗不補送，優惠券仍保留。</p>
+        </section>}
+        <div className="modal-footer"><button type="button" className="btn-secondary" disabled={disabled} onClick={close}>取消</button><button className="btn-primary" disabled={disabled || (notifyPassenger && !issuing.notificationPreview) || (issuing.type !== 2 && (membersLoading || !recipient))}>確認發券</button></div>
       </form> : <form onSubmit={e => {
         e.preventDefault(); if (disabled) return;
         const amount = Number(form.discountAmount);

@@ -28,7 +28,7 @@ window.fetch=async(url,options)=>{
  if(url!=='https://asia-east1-axeflowlotus-6dc3b.cloudfunctions.net/webAdmin')throw Error('Unexpected network');
  if(options.headers.Authorization!=='Bearer fixture-token')throw Error('Missing token');
  const x=JSON.parse(options.body);calls.push(x);let result;
- if(x.action==='COUPONS')result={items:rows,after:null};
+ if(x.action==='COUPONS')result={items:rows.map(r=>({...r,notificationPreview:'您收到一張優惠券！\\n\\n'+r.title+' · 折抵'+r.discountAmount+'元\\n使用期間：'+r.startDate+'～'+r.endDate+'\\n\\n查看我的優惠券\\nhttps://liff.line.me/2012269566-puD0ISKR?tab=other&view=coupons'})),after:null};
  else if(x.action==='USERS')result={items:[{id:'MEMBER-test',name:'Jessica 測試乘客',phoneNumber:'0900000000',isNPC:false,accountStatus:'ACTIVE',lineUid:'U'+'a'.repeat(32)}],after:null};
  else if(receipts.has(x.operationId))result=receipts.get(x.operationId);
  else {
@@ -92,13 +92,18 @@ window.fetch=async(url,options)=>{
     assert.equal(await run(`calls.filter(c=>c.action==='COUPON_CREATE').length`),1);
     assert.equal(await run(`calls.find(c=>c.action==='COUPON_CREATE').type`),3);
     await click('發券');await wait(`document.querySelector('option[value="MEMBER-test"]')!==null`);
+    assert.equal(await run(`document.querySelector('.coupon-notify input').checked`),true);
+    assert.equal(await run(`document.querySelector('.coupon-preview-text').textContent.includes('view=coupons')`),true);
+    await run(`document.querySelector('.coupon-notify input').click()`);await wait(`!document.querySelector('.coupon-preview')`);
     await fill('select','MEMBER-test');
     await run('failAfterWrite=true');await click('確認發券');await wait(`document.body.textContent.includes('重試原操作（不重複發券）')`);
     assert.equal(await run(`document.querySelector('button[aria-label="關閉"]').disabled`),true);
     await click('重試原操作（不重複發券）');await wait(`!document.querySelector('[role=dialog]')`);
     assert.equal(await run(`new Set(calls.filter(c=>c.action==='COUPON_ISSUE').map(c=>c.operationId)).size`),1);
+    assert.equal(await run(`calls.filter(c=>c.action==='COUPON_ISSUE').every(c=>c.notifyPassenger===false)`),true);
     await click('發券');await wait(`document.querySelector('option[value="MEMBER-test"]')!==null`);await fill('select','MEMBER-test');await click('確認發券');await wait(`!document.querySelector('[role=dialog]')`);
     assert.equal(await run(`new Set(calls.filter(c=>c.action==='COUPON_ISSUE').map(c=>c.operationId)).size`),2);
+    assert.equal(await run(`calls.filter(c=>c.action==='COUPON_ISSUE').at(-1).notifyPassenger`),true);
     assert.equal(await run(`[...document.querySelectorAll('tbody tr')].find(r=>r.textContent.includes('2027來花蓮跨年')).textContent.includes('編輯')`),false);
     await click('新增優惠券草稿');await wait(`!!document.querySelector('[role=dialog]')`);
     await fill('select','2');await fill('input[maxlength="256"]','全體活動150');await fill('input[type=number]','150');await fill('input[type=date]','2026-01-01');
@@ -107,10 +112,22 @@ window.fetch=async(url,options)=>{
     await run(`[...document.querySelectorAll('tbody tr')].find(r=>r.textContent.includes('全體活動150')).querySelector('.btn-primary').click()`);
     await wait(`document.querySelector('[role=dialog]')?.textContent.includes('發券給全體乘客')`);
     assert.equal(await run(`!!document.querySelector('[role=dialog] select')`),false);
+    assert.equal(await run(`document.querySelector('.coupon-notify input').checked`),true);
+    assert.equal(await run(`document.querySelector('.coupon-preview-text').textContent`),'您收到一張優惠券！\n\n全體活動150 · 折抵150元\n使用期間：2026-01-01～2039-08-31\n\n查看我的優惠券\nhttps://liff.line.me/2012269566-puD0ISKR?tab=other&view=coupons');
+    await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+    await wait(`(()=>{const r=document.querySelector('[role=dialog]').getBoundingClientRect();return r.left>=0&&r.right<=390&&r.top>=0&&r.bottom<=844})()`);
+    await run(`new Promise(r=>setTimeout(r,500))`);
+    assert.equal(await run(`document.querySelector('[role=dialog]').scrollWidth<=document.querySelector('[role=dialog]').clientWidth`),true);
+    assert.equal(await run(`document.querySelector('.coupon-notify input').getBoundingClientRect().width`),20);
+    fs.writeFileSync(path.join(temp,'notification-mobile.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+    await run(`new Promise(r=>setTimeout(r,500))`);
+    fs.writeFileSync(path.join(temp,'notification-desktop.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
     assert.equal(await run(`document.querySelector('[role=dialog]').textContent.includes('開始發券後的新戶不補發')`),true);
     await run('failAfterWrite=true');await click('確認發券');await wait(`document.body.textContent.includes('重試原操作（不重複發券）')`);
     await click('重試原操作（不重複發券）');await wait(`!document.querySelector('[role=dialog]')`);
     assert.equal(await run(`new Set(calls.filter(c=>c.action==='COUPON_PUBLISH').map(c=>c.operationId)).size`),1);
+    assert.equal(await run(`calls.filter(c=>c.action==='COUPON_PUBLISH').every(c=>c.notifyPassenger===true)`),true);
     await run(`rows.find(r=>r.title==='全體活動150').distribution={state:'FAILED',issuedCount:1,skippedCount:2,lastError:'發券暫時中斷'}`);
     await wait(`document.body.textContent.includes('重試發券')`); // 由輪詢取得背景進度，不手動重整。
     await click('重試發券');await wait(`calls.some(c=>c.action==='COUPON_RETRY')&&!document.body.textContent.includes('重試發券')`);
