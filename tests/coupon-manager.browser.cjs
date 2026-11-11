@@ -34,6 +34,8 @@ window.fetch=async(url,options)=>{
  else {
   if(x.action==='COUPON_CREATE') { result={id:'new'+(++counter)};rows.push({...x,id:result.id,status:'draft',version:{seconds:2,nanoseconds:0},expiresAtMillis:2208960000000}); }
   else if(x.action==='COUPON_ISSUE') {const row=rows.find(r=>r.id===x.id); row.status='published';row.version.seconds++; result={id:x.id,couponId:'grant'+(++counter)};}
+  else if(x.action==='COUPON_PUBLISH') {const row=rows.find(r=>r.id===x.id);row.status='published';row.version.seconds++;row.distribution={state:'PENDING',issuedCount:0,skippedCount:0,lastError:''};result={id:x.id,distributionState:'PENDING'};}
+  else if(x.action==='COUPON_RETRY') {const row=rows.find(r=>r.id===x.id);row.distribution.state='PENDING';row.distribution.lastError='';row.version.seconds++;result={id:x.id,distributionState:'PENDING'};}
   else if(x.action==='COUPON_UPDATE') {Object.assign(rows.find(r=>r.id===x.id),x);result={id:x.id};}
   else if(x.action==='COUPON_DELETE') {rows=rows.filter(r=>r.id!==x.id);result={id:x.id};}
   else if(x.action==='COUPON_TOGGLE') {rows.find(r=>r.id===x.id).status=x.enabled?'active':'inactive';result={id:x.id};}
@@ -69,7 +71,7 @@ window.fetch=async(url,options)=>{
     ws.onmessage=event=>{const m=JSON.parse(event.data);if(m.id){const p=waiting.get(m.id);waiting.delete(m.id);m.error?p.reject(m.error):p.resolve(m.result);}else if(m.method==='Runtime.exceptionThrown')errors.push(m.params.exceptionDetails);};
     const send=(method,params={})=>new Promise((resolve,reject)=>{const id=++serial;waiting.set(id,{resolve,reject});ws.send(JSON.stringify({id,method,params}));});
     const run=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});assert.equal(r.exceptionDetails,undefined,JSON.stringify(r.exceptionDetails));return r.result.value;};
-    const wait=async expression=>{for(let i=0;i<150;i++){if(await run(expression))return;await new Promise(r=>setTimeout(r,30));}assert.fail(expression);};
+    const wait=async expression=>{for(let i=0;i<250;i++){if(await run(expression))return;await new Promise(r=>setTimeout(r,30));}assert.fail(expression);};
     const click=label=>run(`[...document.querySelectorAll('button')].find(b=>b.textContent===${JSON.stringify(label)}).click()`);
     const fill=async(selector,value)=>{await run(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(el instanceof HTMLSelectElement?HTMLSelectElement.prototype:el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));})()`);};
     await send('Runtime.enable');await send('Page.enable');
@@ -99,6 +101,23 @@ window.fetch=async(url,options)=>{
     assert.equal(await run(`new Set(calls.filter(c=>c.action==='COUPON_ISSUE').map(c=>c.operationId)).size`),2);
     assert.equal(await run(`[...document.querySelectorAll('tbody tr')].find(r=>r.textContent.includes('2027來花蓮跨年')).textContent.includes('編輯')`),false);
     await click('新增優惠券草稿');await wait(`!!document.querySelector('[role=dialog]')`);
+    await fill('select','2');await fill('input[maxlength="256"]','全體活動150');await fill('input[type=number]','150');await fill('input[type=date]','2026-01-01');
+    await run(`(()=>{const e=document.querySelectorAll('input[type=date]')[1];Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'2039-08-31');e.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await click('儲存草稿');await wait(`!document.querySelector('[role=dialog]')`);
+    await run(`[...document.querySelectorAll('tbody tr')].find(r=>r.textContent.includes('全體活動150')).querySelector('.btn-primary').click()`);
+    await wait(`document.querySelector('[role=dialog]')?.textContent.includes('發券給全體乘客')`);
+    assert.equal(await run(`!!document.querySelector('[role=dialog] select')`),false);
+    assert.equal(await run(`document.querySelector('[role=dialog]').textContent.includes('開始發券後的新戶不補發')`),true);
+    await run('failAfterWrite=true');await click('確認發券');await wait(`document.body.textContent.includes('重試原操作（不重複發券）')`);
+    await click('重試原操作（不重複發券）');await wait(`!document.querySelector('[role=dialog]')`);
+    assert.equal(await run(`new Set(calls.filter(c=>c.action==='COUPON_PUBLISH').map(c=>c.operationId)).size`),1);
+    await run(`rows.find(r=>r.title==='全體活動150').distribution={state:'FAILED',issuedCount:1,skippedCount:2,lastError:'發券暫時中斷'}`);
+    await wait(`document.body.textContent.includes('重試發券')`); // 由輪詢取得背景進度，不手動重整。
+    await click('重試發券');await wait(`calls.some(c=>c.action==='COUPON_RETRY')&&!document.body.textContent.includes('重試發券')`);
+    await run(`rows.find(r=>r.title==='全體活動150').distribution={state:'COMPLETED',issuedCount:2,skippedCount:2,lastError:''}`);
+    await click('重新整理');await wait(`document.body.textContent.includes('已發 2 張')`);
+    assert.equal(await run(`[...document.querySelectorAll('tbody tr')].find(r=>r.textContent.includes('全體活動150')).querySelectorAll('button').length`),0);
+    await click('新增優惠券草稿');await wait(`!!document.querySelector('[role=dialog]')`);
     await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
     await wait(`(()=>{const r=document.querySelector('[role=dialog]').getBoundingClientRect();return r.left>=0&&r.right<=390&&r.height<=844})()`);
     fs.writeFileSync(path.join(temp,'mobile.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
@@ -109,7 +128,7 @@ window.fetch=async(url,options)=>{
     await run(`changeUser(null);hold=false;release()`);await wait(`document.body.textContent.includes('請先使用管理員')`);
     assert.equal(await run(`document.querySelector('tbody')===null`),true);
     assert.deepEqual(errors,[]);
-    console.log('PASS: 草稿建立、Type1不可刪、目前/歷史、長名稱、Type3兩次發送、回應遺失同operation重試、登出晚回覆隔離、390px dialog與Escape。');
+    console.log('PASS: 草稿、Type1保護、Type3連發、Type2全體確認／回應遺失防重／背景輪詢／失敗重試／完成鎖定、目前/歷史、真實圖示等高、長名稱、登出隔離、390px dialog與Escape。');
     console.log('Screenshots: '+temp);
   } finally {ws?.close();chrome.kill('SIGTERM');await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;});

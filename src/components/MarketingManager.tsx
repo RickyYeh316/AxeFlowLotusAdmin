@@ -7,8 +7,9 @@ import { auth } from '../firebase/config';
 import { adminApi, AdminApiError } from '../lib/adminApi';
 
 type Version = { seconds: number; nanoseconds: number };
+type Distribution = { state: 'PENDING' | 'FAILED' | 'COMPLETED'; issuedCount: number; skippedCount: number; lastError: string };
 type CouponRow = { id: string; type: number | null; title: string; description: string; discountAmount: number;
-  status: string; startDate: string; endDate: string; expiresAtMillis: number | null; version: Version };
+  status: string; startDate: string; endDate: string; expiresAtMillis: number | null; version: Version; distribution?: Distribution | null };
 type Passenger = { id: string; name: string; phoneNumber: string; accountStatus: string; isNPC: boolean; lineUid: string };
 type Form = { type: number; title: string; description: string; discountAmount: string; startDate: string; endDate: string };
 type Request = Record<string, unknown>;
@@ -26,13 +27,15 @@ export default function MarketingManager() {
   const [issuing, setIssuing] = useState<CouponRow | null>(null), [passengers, setPassengers] = useState<Passenger[]>([]);
   const [search, setSearch] = useState(''), [selected, setSelected] = useState(''), [membersLoading, setMembersLoading] = useState(false);
   const [busy, setBusy] = useState(false), [pending, setPending] = useState<Request | null>(null);
-  const scope = useRef(0), requestLock = useRef(false), listSequence = useRef(0);
+  const scope = useRef(0), requestLock = useRef(false), listSequence = useRef(0), listInFlight = useRef(false);
   const modalRef = useRef<HTMLDivElement>(null);
   const modal = editing !== undefined || issuing !== null;
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (quiet = false) => {
+    if (quiet && listInFlight.current) return;
     const generation = scope.current, sequence = ++listSequence.current;
-    setLoading(true); setError('');
+    listInFlight.current = true;
+    if (!quiet) setLoading(true); setError('');
     try {
       const all: CouponRow[] = []; let after: string | null = null;
       do {
@@ -42,8 +45,11 @@ export default function MarketingManager() {
       } while (after);
       setRows(all); setNow(Date.now());
     } catch (e) {
-      if (generation === scope.current && sequence === listSequence.current) { setRows([]); setError((e as Error).message); }
-    } finally { if (generation === scope.current && sequence === listSequence.current) setLoading(false); }
+      if (generation === scope.current && sequence === listSequence.current) { if (!quiet) setRows([]); setError((e as Error).message); }
+    } finally {
+      if (sequence === listSequence.current) listInFlight.current = false;
+      if (generation === scope.current && sequence === listSequence.current) setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -59,6 +65,13 @@ export default function MarketingManager() {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => { scope.current++; unsubscribe(); clearInterval(timer); };
   }, [reload]);
+
+  const distributing = rows.some(row => row.distribution?.state === 'PENDING');
+  useEffect(() => {
+    if (!distributing || loading || busy || pending) return;
+    const timer = setInterval(() => void reload(true), 5000);
+    return () => clearInterval(timer);
+  }, [distributing, loading, busy, pending, reload]);
 
   useEffect(() => {
     if (!modal) return;
@@ -80,7 +93,8 @@ export default function MarketingManager() {
       sessionStorage.removeItem(journalKey(uid));
       if (generation !== scope.current) return;
       setPending(null); setEditing(undefined); setIssuing(null);
-      setNotice(input.action === 'COUPON_ISSUE' ? '已發送一張優惠券。' : '已儲存操作結果。');
+      setNotice(['COUPON_PUBLISH', 'COUPON_RETRY'].includes(String(input.action)) ? '已受理全體發券，後端會持續處理；可關閉此頁。'
+        : input.action === 'COUPON_ISSUE' ? '已發送一張優惠券。' : '已儲存操作結果。');
       await reload();
     } catch (e) {
       if (generation !== scope.current) return;
@@ -100,6 +114,7 @@ export default function MarketingManager() {
   async function choosePassenger(row: CouponRow) {
     const generation = scope.current;
     setIssuing(row); setSelected(''); setSearch(''); setPassengers([]); setMembersLoading(true); setError(''); setNotice('');
+    if (row.type === 2) { setMembersLoading(false); return; }
     try {
       const all: Passenger[] = []; let after: string | null = null;
       do {
@@ -149,7 +164,12 @@ export default function MarketingManager() {
           {filtered.slice((currentPage - 1) * 10, currentPage * 10).map(row => <tr key={row.id}>
             <td>{typeName(row.type)}</td><td className="coupon-name"><strong>{row.title}</strong>{row.description && <p className="coupon-help">{row.description}</p>}</td>
             <td>{row.discountAmount} 元</td><td>{row.startDate || '尚未設定'}</td><td>{row.endDate || '尚未設定'}</td>
-            <td>{row.type === 1 ? row.status === 'active' ? '啟用' : '停用' : row.status === 'draft' ? '草稿' : row.status === 'published' ? '已發券' : '狀態待確認'}</td>
+            <td>{row.type === 1 ? row.status === 'active' ? '啟用' : '停用' : row.status === 'draft' ? '草稿'
+              : row.distribution?.state === 'PENDING' ? '發券中' : row.distribution?.state === 'FAILED' ? '發券中斷'
+              : row.status === 'published' ? '已發券' : '狀態待確認'}
+              {row.distribution && <p className="coupon-help">已發 {row.distribution.issuedCount} 張 · 略過 {row.distribution.skippedCount} 筆</p>}
+              {row.distribution?.lastError && <p className="coupon-help">{row.distribution.lastError}</p>}
+            </td>
             <td><div className="coupon-actions">
               {(row.type === 1 || ([2, 3].includes(row.type!) && row.status === 'draft')) && <button className="btn-secondary" disabled={disabled} onClick={() => edit(row)}>編輯</button>}
               {row.type === 1 ? <button className="btn-secondary" disabled={disabled} onClick={() => {
@@ -157,7 +177,8 @@ export default function MarketingManager() {
               }}>{row.status === 'active' ? '停用' : '啟用'}</button> : <>
                 {[2, 3].includes(row.type!) && row.status === 'draft' && <button className="btn-secondary" disabled={disabled} onClick={() => { if (window.confirm(`刪除草稿「${row.title}」？`)) void action(row, 'COUPON_DELETE'); }}>刪除</button>}
                 {row.type === 3 && ['draft', 'published'].includes(row.status) && <button className="btn-primary" disabled={disabled || row.expiresAtMillis === null || now >= row.expiresAtMillis} onClick={() => void choosePassenger(row)}>發券</button>}
-                {row.type === 2 && row.status === 'draft' && <span className="coupon-help">全體發券待接續</span>}
+                {row.type === 2 && row.status === 'draft' && <button className="btn-primary" disabled={disabled || row.expiresAtMillis === null || now >= row.expiresAtMillis} onClick={() => void choosePassenger(row)}>發券</button>}
+                {row.type === 2 && row.distribution?.state === 'FAILED' && <button className="btn-primary" disabled={disabled} onClick={() => void action(row, 'COUPON_RETRY')}>重試發券</button>}
               </>}
             </div></td>
           </tr>)}
@@ -175,23 +196,29 @@ export default function MarketingManager() {
         else if (!e.shiftKey && (document.activeElement === last || document.activeElement === modalRef.current)) { e.preventDefault(); first?.focus(); }
       }
     }}>
-      <div className="modal-header"><h3 id="coupon-dialog-title" className="modal-title">{issuing ? '發券給乘客' : editing ? editing.type === 1 ? '編輯新戶優惠券' : '編輯優惠券草稿' : '新增優惠券草稿'}</h3>
+      <div className="modal-header"><h3 id="coupon-dialog-title" className="modal-title">{issuing ? issuing.type === 2 ? '發券給全體乘客' : '發券給乘客' : editing ? editing.type === 1 ? '編輯新戶優惠券' : '編輯優惠券草稿' : '新增優惠券草稿'}</h3>
         <button className="tab-close-btn" aria-label="關閉" disabled={disabled} onClick={close}><X size={18} /></button></div>
       {feedback}
       {issuing ? <form onSubmit={e => {
-        e.preventDefault(); if (!recipient || disabled) return;
+        e.preventDefault(); if (disabled) return;
+        if (issuing.type === 2) {
+          if (window.confirm(`發送「${issuing.title}」${issuing.discountAmount}元券給全體有效乘客，每人一張？此活動只能發一次，發出後不回收。`)) void action(issuing, 'COUPON_PUBLISH');
+          return;
+        }
+        if (!recipient) return;
         if (window.confirm(`發送「${issuing.title}」${issuing.discountAmount}元券一張給「${recipient.name}」？發出後不回收。`)) void action(issuing, 'COUPON_ISSUE', { userId: selected });
       }}>
         <p><strong>{issuing.title}</strong> · 折抵 {issuing.discountAmount} 元</p>
         <p className="coupon-help">{issuing.startDate} ～ {issuing.endDate}（台灣時間）</p>
+        {issuing.type === 2 ? <p className="coupon-help">每位正式有效乘客各一張；停權、已刪除與測試帳號略過。開始發券後的新戶不補發。此活動只能發一次，發出後不回收。<br />發券在背景處理，可關閉此頁；LINE 通知尚未提供。</p> : <>
         <p className="coupon-help">每次確認發送一張；同一乘客可再次獲得，發出後不回收。</p>
         <label className="form-group">搜尋乘客<input className="form-input" value={search} disabled={disabled} onChange={e => setSearch(e.target.value)} placeholder="姓名、電話或乘客編號" /></label>
         {membersLoading ? <p>載入乘客中…</p> : <label className="form-group">選擇乘客<select className="form-select" required value={selected} disabled={disabled} onChange={e => setSelected(e.target.value)}>
           <option value="">請選擇乘客</option>
           {recipient && !memberMatches.some(p => p.id === recipient.id) && <option value={recipient.id}>{recipient.name}（已選擇）</option>}
           {memberMatches.map(p => <option key={p.id} value={p.id}>{p.name || '未命名'} · {p.phoneNumber || p.id}</option>)}
-        </select></label>}
-        <div className="modal-footer"><button type="button" className="btn-secondary" disabled={disabled} onClick={close}>取消</button><button className="btn-primary" disabled={disabled || membersLoading || !recipient}>確認發券</button></div>
+        </select></label>}</>}
+        <div className="modal-footer"><button type="button" className="btn-secondary" disabled={disabled} onClick={close}>取消</button><button className="btn-primary" disabled={disabled || (issuing.type !== 2 && (membersLoading || !recipient))}>確認發券</button></div>
       </form> : <form onSubmit={e => {
         e.preventDefault(); if (disabled) return;
         const amount = Number(form.discountAmount);

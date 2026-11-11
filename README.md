@@ -32,8 +32,9 @@ AH 既有畫面與讀寫流程已於 11/11 初步盤點；登入門禁、正式�
 
 ## 優惠券管理（11/11）
 
-- `MarketingManager.tsx`：新增優惠券草稿、草稿編輯／刪除、Type1設定與啟停、Type3指定乘客發券、目前／歷史列表；Type2全體發券下一批。
+- `MarketingManager.tsx`：新增優惠券草稿、草稿編輯／刪除、Type1設定與啟停、Type3指定乘客發券、目前／歷史列表；Type2全體發券確認、背景進度輪詢與中斷重試。
 - `src/lib/adminApi.ts`：Google Firebase token呼叫asia-east1的webAdmin；固定AH Origin由後端允許。券模板不再由Client寫Firestore，規則／交易請對照FBase Lotus functions/src/admin／coupons README。
+- Type2每模板只全發一次；僅有效正式乘客，開始後新戶不補發。發券由後端分批執行，關頁仍繼續；畫面每5秒更新發送／略過數，FAILED可重試同一工作。LINE通知已定案待下一批實作，見root business/COUPONS.md。
 - 每次mutation保留operationId與完整請求於sessionStorage；連線結果待確認時鎖定其他異動，可重試原操作，重整／換頁仍可恢復。不要手動清除待確認操作後重發券。
 - 依賴與正式建置完成後，以Node22執行`node tests/coupon-manager.browser.cjs`；真實headless Chrome使用隔離Auth／HTTP fixture、實際元件／API模組及建置CSS，測草稿、連發、回應遺失重送、歷史分類、長名稱、窄螢幕與登出晚回覆。輸出及截圖存於/private/tmp，不操作正式資料。
 
