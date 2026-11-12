@@ -1,5 +1,15 @@
 # LotusAH — Web 管理介面
 
+## 11/12 優惠券結帳
+
+- `src/components/CouponSettlementManager.tsx`：新側邊選單／tab「優惠券結帳」，整體沿優惠券管理；分類及搜尋重用訂單管理既有CSS。預設未結帳，七欄包含結帳時間；可依司機／乘客／券名／訂單編號搜尋，使用時間預設新到舊。
+- 讀完後端全部帳本分段才顯示完整合計，畫面每頁10筆。司機姓名／車牌搜尋後必須點候選人，唯有單一司機＋未結帳＋有待結款才啟用右上結帳。乘客查詢及已結帳／全部唯讀。右上結帳按鈕停用時採灰底灰字、無光暈與hover位移，啟用維持紫色；CSS限定.checkout-action，不改其他主按鈕或資格判斷；此小修19:12:05已發布build-2026-11-12-002，正式build／既有Chrome回歸與線上回讀通過。
+- `COUPON_CHECKOUT_PREVIEW`核對整批總額與張數，確認框付現後送`COUPON_CHECKOUT`。批次版本變動由後端拒絕；原operationId與review保存在本人sessionStorage，回應不明時保留並只允許重試，重整不自動送出。登入切換隔離晚回覆。
+- 時間沿既有batch.settledAt，顯示台灣年月日時分秒；未結帳標示未結帳。AOS進頁一次讀取保持，退出再進才更新。
+- 以Node22執行`node tests/coupon-settlement.browser.cjs`，使用實際元件／adminApi／建置CSS與隔離Auth／HTTP fixture、headless Chrome；驗證搜尋、完整合計、同名司機、資格、預覽變動、重載回放、拒絕、時間、390px確認框及登入隔離。另執行原`tests/coupon-manager.browser.cjs`回歸。
+- 11/12正式build及上述兩套Chrome fixture通過，桌面與390px截圖已目視。11/12 webadmin-00009-rol及AH build-2026-11-12-001已部署，ACTIVE／100%流量、8個線上資產與HTTP門禁回讀通過；Ready真人驗收待進行，未操作正式結帳資料。
+
+
 本 repo 在 VSC Workspace 的名稱為 **FBase LotusAH**，簡稱 **AH**，實際位置依目前 Workspace 的同名 folder path 解析。
 
 新對話先讀 [AGENTS](AGENTS.md)，再接共同 root 的規則與交接。

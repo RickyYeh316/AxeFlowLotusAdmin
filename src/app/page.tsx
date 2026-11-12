@@ -9,7 +9,8 @@ import {
   Car, 
   Users, 
   ClipboardList, 
-  Tag, 
+  Tag,
+  Receipt,
   Shield, 
   LogOut,
   MapPin,
@@ -26,6 +27,7 @@ import DriverManager from '../components/DriverManager';
 import UserManager from '../components/UserManager';
 import OrderManager from '../components/OrderManager';
 import MarketingManager from '../components/MarketingManager';
+import CouponSettlementManager from '../components/CouponSettlementManager';
 import AdminManager from '../components/AdminManager';
 
 interface AdminUser {
@@ -127,6 +129,7 @@ export default function Home() {
       case 'users': return <Users size={12} />;
       case 'orders': return <ClipboardList size={12} />;
       case 'marketing': return <Tag size={12} />;
+      case 'couponSettlement': return <Receipt size={12} />;
       case 'admins': return <Shield size={12} />;
       default: return <LayoutDashboard size={12} />;
     }
@@ -140,6 +143,7 @@ export default function Home() {
       case 'users': return '乘客管理';
       case 'orders': return '訂單管理';
       case 'marketing': return '優惠券管理';
+      case 'couponSettlement': return '優惠券結帳';
       case 'admins': return '管理者管理';
       default: return '儀表板總覽';
     }
@@ -177,6 +181,8 @@ export default function Home() {
         return <OrderManager />;
       case 'marketing':
         return <MarketingManager />;
+      case 'couponSettlement':
+        return <CouponSettlementManager />;
       case 'admins':
         return <AdminManager currentAdminEmail={adminUser.email} />;
       default:
@@ -257,6 +263,15 @@ export default function Home() {
             {!sidebarCollapsed && <span>優惠券管理</span>}
           </button>
           
+          <button
+            onClick={() => handleNavigate('couponSettlement')}
+            className={`menu-item ${activeTab === 'couponSettlement' ? 'active' : ''}`}
+            title="優惠券結帳"
+          >
+            <Receipt size={18} />
+            {!sidebarCollapsed && <span>優惠券結帳</span>}
+          </button>
+
           <button 
             onClick={() => handleNavigate('admins')}
             className={`menu-item ${activeTab === 'admins' ? 'active' : ''}`}

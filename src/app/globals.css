@@ -1065,3 +1065,29 @@ body.modal-open .workspace-tabs-bar {
 .coupon-modal .coupon-notify input { width: 20px; height: 20px; flex: 0 0 auto; accent-color: var(--color-primary); }
 .coupon-preview { margin-top: 12px; padding: 16px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: rgba(255,255,255,0.025); }
 .coupon-preview-text { margin: 12px 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+
+/* 優惠券結帳沿用管理表格、訂單分類與搜尋樣式。 */
+.checkout-action { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: 360px; }
+.checkout-action .coupon-help { text-align: right; }
+.checkout-action .btn-primary:disabled {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
+.checkout-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin: 24px 0 12px; }
+.checkout-filters label { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 0.8rem; }
+.checkout-filters select { width: auto; }
+.checkout-search { width: 360px; max-width: 100%; }
+.checkout-selected { display: flex; align-items: center; gap: 12px; overflow-wrap: anywhere; }
+.checkout-candidates { display: flex; flex-wrap: wrap; gap: 8px; max-height: 180px; overflow-y: auto; }
+.checkout-summary { margin: 24px 0; font-weight: 600; overflow-wrap: anywhere; }
+.checkout-table { min-width: 960px; }
+.checkout-table td { white-space: normal; overflow-wrap: anywhere; }
+.category-pill:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 600px) {
+  .checkout-action { align-items: flex-start; max-width: 100%; }
+  .checkout-action .coupon-help { text-align: left; }
+  .checkout-filters, .checkout-selected { min-width: 0; max-width: 100%; }
+}
