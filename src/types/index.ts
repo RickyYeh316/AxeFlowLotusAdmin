@@ -82,7 +82,8 @@ export interface Driver {
 
 export interface User {
   id?: string; // UID / LINE UID
-  userId: string; // document id (usually LINE userId)
+  userId: string; // 乘客內碼，資料與操作關聯保持
+  passengerNumber?: string; // 外顯乘客編號，保留前導零
   name: string; // Negotiated name
   displayName?: string; // Compatibility alias
   tripStatus: UserTripStatus;

@@ -1,5 +1,7 @@
 'use client';
 
+import { passengerNumber } from '../lib/passengerNumber';
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { Search, RefreshCw, X } from 'lucide-react';
@@ -8,7 +10,7 @@ import { adminApi, AdminApiError } from '../lib/adminApi';
 
 type Driver = { id: string; name: string; carPlate: string };
 type Row = { id: string; name: string; amount: number; redeemedAt: number; readableId: string; orderId: string;
-  driverId: string; driverName: string; carPlate: string; passengerId: string; passengerName: string; settledAt: number | null; batchId: string };
+  driverId: string; driverName: string; carPlate: string; passengerId: string; passengerName: string; passengerNumber?: string; settledAt: number | null; batchId: string };
 type Review = { batchId: string; totalAmount: number; count: number; version: { seconds: number; nanoseconds: number } };
 type Preview = { driverId: string; driverName: string; carPlate: string; review: Review };
 type Pending = { preview: Preview; request: { action: 'COUPON_CHECKOUT'; operationId: string; driverId: string; review: Review } };
@@ -90,7 +92,8 @@ export default function CouponSettlementManager() {
   const filtered = useMemo(() => rows.filter(row => {
     if (view === 'unsettled' && row.settledAt !== null || view === 'settled' && row.settledAt === null) return false;
     if (field === 'driver') return selected ? row.driverId === selected : `${row.driverName} ${row.carPlate}`.toLowerCase().includes(term);
-    const value = field === 'passenger' ? row.passengerName : field === 'coupon' ? row.name : row.readableId;
+    if (field === 'passenger') return row.passengerName.toLowerCase().includes(term) || passengerNumber(row.passengerNumber) === term;
+    const value = field === 'coupon' ? row.name : row.readableId;
     return value.toLowerCase().includes(field === 'order' ? term.replace(/^#/, '') : term);
   }), [rows, view, field, selected, term]);
   const sorted = useMemo(() => [...filtered].sort((a, b) => {
@@ -171,7 +174,7 @@ export default function CouponSettlementManager() {
         {chosen && field === 'driver' ? <div className="checkout-selected"><span>{chosen.name} · {chosen.carPlate || '車牌未提供'}</span>
           <button className="btn-secondary" aria-label="清除司機" disabled={locked} onClick={() => { setSelected(''); setQuery(''); setPage(1); }}><X size={16} /></button></div>
           : <div className="search-wrapper checkout-search"><span className="search-icon"><Search size={16} /></span>
-            <input className="search-input" aria-label="搜尋內容" value={query} disabled={locked} placeholder={field === 'driver' ? '輸入司機姓名或車牌，再選定司機' : field === 'passenger' ? '輸入乘客姓名' : field === 'coupon' ? '輸入優惠券名稱' : '輸入訂單編號'}
+            <input className="search-input" aria-label="搜尋內容" value={query} disabled={locked} placeholder={field === 'driver' ? '輸入司機姓名或車牌，再選定司機' : field === 'passenger' ? '輸入乘客姓名或乘客編號' : field === 'coupon' ? '輸入優惠券名稱' : '輸入訂單編號'}
               onChange={e => { setQuery(e.target.value); setSelected(''); setPage(1); }} /></div>}
       </div>
       {field === 'driver' && term && !selected && !loading && <div className="checkout-candidates" aria-label="符合的司機">
@@ -188,7 +191,7 @@ export default function CouponSettlementManager() {
           </tr></thead><tbody>{sorted.slice((currentPage - 1) * 10, currentPage * 10).map(row => <tr key={row.id}>
             <td className="coupon-name">{row.name}</td><td>{money(row.amount)} 元</td><td>{date(row.redeemedAt)}</td>
             <td>{row.readableId ? `#${row.readableId}` : '尚未提供'}</td><td>{row.driverName}<p className="coupon-help">{row.carPlate || '車牌未提供'}</p></td>
-            <td>{row.passengerName}</td><td>{row.settledAt === null ? '未結帳' : date(row.settledAt)}</td>
+            <td>{row.passengerName}<p className="coupon-help">乘客編號：{passengerNumber(row.passengerNumber) || '—'}</p></td><td>{row.settledAt === null ? '未結帳' : date(row.settledAt)}</td>
           </tr>)}</tbody></table></div>
           <div className="coupon-toolbar"><button className="btn-secondary" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>上一頁</button>
             <span>{currentPage} / {pages}</span><button className="btn-secondary" disabled={currentPage >= pages} onClick={() => setPage(currentPage + 1)}>下一頁</button></div>

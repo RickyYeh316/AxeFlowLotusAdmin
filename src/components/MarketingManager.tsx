@@ -1,5 +1,7 @@
 'use client';
 
+import { passengerNumber } from '../lib/passengerNumber';
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { Plus, X, RefreshCw } from 'lucide-react';
@@ -10,7 +12,7 @@ type Version = { seconds: number; nanoseconds: number };
 type Distribution = { state: 'PENDING' | 'FAILED' | 'COMPLETED'; issuedCount: number; skippedCount: number; lastError: string };
 type CouponRow = { id: string; type: number | null; title: string; description: string; discountAmount: number;
   status: string; startDate: string; endDate: string; expiresAtMillis: number | null; version: Version; notificationPreview?: string | null; distribution?: Distribution | null };
-type Passenger = { id: string; name: string; phoneNumber: string; accountStatus: string; isNPC: boolean; lineUid: string };
+type Passenger = { id: string; passengerNumber?: string; name: string; phoneNumber: string; accountStatus: string; isNPC: boolean; lineUid: string };
 type Form = { type: number; title: string; description: string; discountAmount: string; startDate: string; endDate: string };
 type Request = Record<string, unknown>;
 const typeName = (type: number | null) => ({ 1: '新戶優惠券', 2: '活動優惠券', 3: '補償優惠券' }[type ?? 0] || '類型待確認');
@@ -137,7 +139,7 @@ export default function MarketingManager() {
   }), [rows, history, now, sort]);
   const pages = Math.max(1, Math.ceil(filtered.length / 10)), currentPage = Math.min(page, pages);
   const disabled = busy || pending !== null;
-  const memberMatches = passengers.filter(p => `${p.name} ${p.phoneNumber} ${p.id}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const memberMatches = passengers.filter(p => `${p.name} ${p.phoneNumber}`.toLowerCase().includes(search.trim().toLowerCase()) || passengerNumber(p.passengerNumber) === search.trim());
   const recipient = passengers.find(p => p.id === selected);
   const close = () => { if (!disabled) { setEditing(undefined); setIssuing(null); setError(''); } };
   const feedback = <>{error && <p role="alert" className="coupon-error">{error}</p>}{notice && <p role="status">{notice}</p>}
@@ -207,7 +209,7 @@ export default function MarketingManager() {
           return;
         }
         if (!recipient) return;
-        if (window.confirm(`發送「${issuing.title}」${issuing.discountAmount}元券一張給「${recipient.name}」？發出後不回收。`)) void action(issuing, 'COUPON_ISSUE', { userId: selected, notifyPassenger });
+        if (window.confirm(`發送「${issuing.title}」${issuing.discountAmount}元券一張給「${recipient.name} · ${passengerNumber(recipient.passengerNumber) || '—'}」？發出後不回收。`)) void action(issuing, 'COUPON_ISSUE', { userId: selected, notifyPassenger });
       }}>
         <p><strong>{issuing.title}</strong> · 折抵 {issuing.discountAmount} 元</p>
         <p className="coupon-help">{issuing.startDate} ～ {issuing.endDate}（台灣時間）</p>
@@ -216,8 +218,8 @@ export default function MarketingManager() {
         <label className="form-group">搜尋乘客<input className="form-input" value={search} disabled={disabled} onChange={e => setSearch(e.target.value)} placeholder="姓名、電話或乘客編號" /></label>
         {membersLoading ? <p>載入乘客中…</p> : <label className="form-group">選擇乘客<select className="form-select" required value={selected} disabled={disabled} onChange={e => setSelected(e.target.value)}>
           <option value="">請選擇乘客</option>
-          {recipient && !memberMatches.some(p => p.id === recipient.id) && <option value={recipient.id}>{recipient.name}（已選擇）</option>}
-          {memberMatches.map(p => <option key={p.id} value={p.id}>{p.name || '未命名'} · {p.phoneNumber || p.id}</option>)}
+          {recipient && !memberMatches.some(p => p.id === recipient.id) && <option value={recipient.id}>{recipient.name} · {passengerNumber(recipient.passengerNumber) || '—'}（已選擇）</option>}
+          {memberMatches.map(p => <option key={p.id} value={p.id}>{p.name || '未命名'} · {passengerNumber(p.passengerNumber) || '—'}</option>)}
         </select></label>}</>}
         <label className="coupon-notify"><input type="checkbox" checked={notifyPassenger} disabled={disabled} onChange={e => setNotifyPassenger(e.target.checked)} />通知乘客</label>
         {notifyPassenger && <section className="coupon-preview" aria-label="LINE 訊息預覽">

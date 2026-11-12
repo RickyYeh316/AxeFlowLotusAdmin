@@ -1,5 +1,7 @@
 'use client';
 
+import { passengerNumber } from '../lib/passengerNumber';
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase/config';
 import { collection, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, Timestamp } from 'firebase/firestore';
@@ -165,6 +167,7 @@ export default function OrderManager() {
 
         list.push({
           userId: doc.id,
+          passengerNumber: passengerNumber(data.passengerNumber),
           name: data.name || data.displayName || '',
           displayName: data.displayName || data.name || '',
           pictureUrl: data.pictureUrl || '',
@@ -402,6 +405,8 @@ export default function OrderManager() {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('ALL');
 
+  const passengerNumbers = useMemo(() => new Map(users.map(user => [user.userId, passengerNumber(user.passengerNumber)])), [users]);
+
   // Filter orders
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
@@ -431,13 +436,14 @@ export default function OrderManager() {
       // 2. Search query filter
       let matchesSearch = true;
       if (searchQuery.trim()) {
-        const searchLower = searchQuery.toLowerCase();
+        const searchLower = searchQuery.trim().toLowerCase();
         const startAddr = order.pickupLocation?.address || order.startAddress || '';
         const endAddr = order.destination?.address || order.endAddress || '';
         matchesSearch = 
           order.id.toLowerCase().includes(searchLower) ||
           (order.readableId || '').toLowerCase().includes(searchLower) ||
           (order.passengerName || '').toLowerCase().includes(searchLower) ||
+          passengerNumbers.get(order.passengerId || order.userId) === searchLower ||
           (order.driverName || '').toLowerCase().includes(searchLower) ||
           startAddr.toLowerCase().includes(searchLower) ||
           endAddr.toLowerCase().includes(searchLower);
@@ -457,7 +463,7 @@ export default function OrderManager() {
 
       return matchesStatus && matchesSearch && matchesType;
     });
-  }, [orders, statusFilter, searchQuery, typeFilter]);
+  }, [orders, statusFilter, searchQuery, typeFilter, passengerNumbers]);
 
   // Sorting & Pagination Logic
   const requestSort = (key: string) => {
@@ -577,7 +583,7 @@ export default function OrderManager() {
             type="text" 
             value={searchQuery}
             onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-            placeholder="搜尋乘客、司機、地址、編號..." 
+            placeholder="搜尋乘客姓名／編號、司機、地址、訂單編號..."
             className="search-input"
           />
         </div>
@@ -647,7 +653,7 @@ export default function OrderManager() {
                             <span style={{ marginLeft: 6, fontSize: '0.65rem', padding: '1px 5px', background: 'rgba(234, 179, 8, 0.2)', color: 'var(--color-accent)', border: '1px solid rgba(234, 179, 8, 0.3)', borderRadius: 4 }}>預約</span>
                           )}
                         </div>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>ID: {(order.passengerId || order.userId || '').slice(0, 10)}...</div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>乘客編號：{passengerNumbers.get(order.passengerId || order.userId) || '—'}</div>
                       </div>
                     </div>
                   </td>
@@ -827,7 +833,7 @@ export default function OrderManager() {
                   <option value="guest">訪客乘車 (免註冊)</option>
                   <option value="manual">手動輸入乘客姓名...</option>
                   {users.map(u => (
-                    <option key={u.userId} value={u.userId}>{u.displayName} ({u.userId.slice(0, 8)})</option>
+                    <option key={u.userId} value={u.userId}>{u.displayName} · {passengerNumber(u.passengerNumber) || '—'}</option>
                   ))}
                 </select>
               </div>

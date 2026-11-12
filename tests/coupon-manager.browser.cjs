@@ -29,7 +29,7 @@ window.fetch=async(url,options)=>{
  if(options.headers.Authorization!=='Bearer fixture-token')throw Error('Missing token');
  const x=JSON.parse(options.body);calls.push(x);let result;
  if(x.action==='COUPONS')result={items:rows.map(r=>({...r,notificationPreview:'您收到一張優惠券！\\n\\n'+r.title+' · 折抵'+r.discountAmount+'元\\n使用期間：'+r.startDate+'～'+r.endDate+'\\n\\n查看我的優惠券\\nhttps://liff.line.me/2012269566-puD0ISKR?tab=other&view=coupons'})),after:null};
- else if(x.action==='USERS')result={items:[{id:'MEMBER-test',name:'Jessica 測試乘客',phoneNumber:'0900000000',isNPC:false,accountStatus:'ACTIVE',lineUid:'U'+'a'.repeat(32)}],after:null};
+ else if(x.action==='USERS')result={items:[{id:'MEMBER-test',passengerNumber:'000123',name:'Jessica 測試乘客',phoneNumber:'0900000000',isNPC:false,accountStatus:'ACTIVE',lineUid:'U'+'a'.repeat(32)}],after:null};
  else if(receipts.has(x.operationId))result=receipts.get(x.operationId);
  else {
   if(x.action==='COUPON_CREATE') { result={id:'new'+(++counter)};rows.push({...x,id:result.id,status:'draft',version:{seconds:2,nanoseconds:0},expiresAtMillis:2208960000000}); }
@@ -95,12 +95,16 @@ window.fetch=async(url,options)=>{
     assert.equal(await run(`document.querySelector('.coupon-notify input').checked`),true);
     assert.equal(await run(`document.querySelector('.coupon-preview-text').textContent.includes('view=coupons')`),true);
     await run(`document.querySelector('.coupon-notify input').click()`);await wait(`!document.querySelector('.coupon-preview')`);
+    assert.equal(await run(`document.querySelector('option[value="MEMBER-test"]').textContent.includes('000123')`),true);
+    assert.equal(await run(`document.querySelector('[role=dialog]').textContent.includes('MEMBER-test')`),false);
+    await fill('input[placeholder="姓名、電話或乘客編號"]','000123');
+    await wait(`document.querySelector('option[value="MEMBER-test"]')!==null`);
     await fill('select','MEMBER-test');
     await run('failAfterWrite=true');await click('確認發券');await wait(`document.body.textContent.includes('重試原操作（不重複發券）')`);
     assert.equal(await run(`document.querySelector('button[aria-label="關閉"]').disabled`),true);
     await click('重試原操作（不重複發券）');await wait(`!document.querySelector('[role=dialog]')`);
     assert.equal(await run(`new Set(calls.filter(c=>c.action==='COUPON_ISSUE').map(c=>c.operationId)).size`),1);
-    assert.equal(await run(`calls.filter(c=>c.action==='COUPON_ISSUE').every(c=>c.notifyPassenger===false)`),true);
+    assert.equal(await run(`calls.filter(c=>c.action==='COUPON_ISSUE').every(c=>c.notifyPassenger===false && c.userId==='MEMBER-test')`),true);
     await click('發券');await wait(`document.querySelector('option[value="MEMBER-test"]')!==null`);await fill('select','MEMBER-test');await click('確認發券');await wait(`!document.querySelector('[role=dialog]')`);
     assert.equal(await run(`new Set(calls.filter(c=>c.action==='COUPON_ISSUE').map(c=>c.operationId)).size`),2);
     assert.equal(await run(`calls.filter(c=>c.action==='COUPON_ISSUE').at(-1).notifyPassenger`),true);

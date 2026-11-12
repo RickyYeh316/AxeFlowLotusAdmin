@@ -1,5 +1,14 @@
 # LotusAH — Web 管理介面
 
+## 11/13 乘客外顯編號
+
+- 乘客列表／排序／搜尋、訂單乘客資訊／搜尋、手動叫車乘客選單、發券選單／確認，以及優惠券結帳的乘客欄／搜尋，使用`passengerNumber`外顯字串；不在畫面顯示乘客內碼。
+- `src/lib/passengerNumber.ts`接受6～8碼、保留前導零，缺值或錯型別顯示「—」；編號搜尋採完整字串相等，姓名／電話等既有搜尋維持。
+- React key、option value、API payload、訂單及券關聯繼續使用內碼。訂單沿既有users監聽查表；發券USERS與COUPON_LEDGER由webAdmin追加唯讀passengerNumber，沿原會員讀取，不新增查詢或修改帳務。
+- Next.js16.2.12正式build與三套Chrome fixture通過：`tests/passenger-number.browser.cjs`、`coupon-manager.browser.cjs`、`coupon-settlement.browser.cjs`；後端22項Emulator通過。前導零／六七八碼精確搜尋／缺號／內碼操作保持均有驗證。測試資料隔離，未代操作正式發券／派車／結帳。
+- 發布與人工確認狀態見Lotus root交接及11/13日誌。
+
+
 ## 11/12 優惠券結帳
 
 - `src/components/CouponSettlementManager.tsx`：新側邊選單／tab「優惠券結帳」，整體沿優惠券管理；分類及搜尋重用訂單管理既有CSS。預設未結帳，七欄包含結帳時間；可依司機／乘客／券名／訂單編號搜尋，使用時間預設新到舊。

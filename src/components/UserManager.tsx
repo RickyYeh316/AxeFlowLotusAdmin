@@ -1,5 +1,7 @@
 'use client';
 
+import { passengerNumber } from '../lib/passengerNumber';
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase/config';
 import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
@@ -51,6 +53,7 @@ export default function UserManager() {
 
         list.push({
           userId: doc.id,
+          passengerNumber: passengerNumber(data.passengerNumber),
           id: doc.id,
           name: data.name || data.displayName || '未設定名稱',
           displayName: data.displayName || data.name || '未設定名稱',
@@ -92,9 +95,9 @@ export default function UserManager() {
   // Filter users based on search & status
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
-      const searchLower = searchQuery.toLowerCase();
+      const searchLower = searchQuery.trim().toLowerCase();
       const nameMatch = user.name.toLowerCase().includes(searchLower) || user.displayName?.toLowerCase().includes(searchLower);
-      const idMatch = user.userId.toLowerCase().includes(searchLower);
+      const idMatch = passengerNumber(user.passengerNumber) === searchLower;
       const phoneMatch = (user.phoneNumber || '').toLowerCase().includes(searchLower);
       const matchesSearch = nameMatch || idMatch || phoneMatch;
 
@@ -306,7 +309,7 @@ export default function UserManager() {
             <thead>
               <tr>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('name')}>乘客名稱 {getSortIcon('name')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('userId')}>乘客編號 {getSortIcon('userId')}</th>
+                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('passengerNumber')}>乘客編號 {getSortIcon('passengerNumber')}</th>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('phoneNumber')}>聯絡電話 {getSortIcon('phoneNumber')}</th>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('accountStatus')}>帳號權限 {getSortIcon('accountStatus')}</th>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('tripStatus')}>叫車行程 {getSortIcon('tripStatus')}</th>
@@ -343,7 +346,7 @@ export default function UserManager() {
                       </div>
                     </td>
                     <td style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
-                      {user.userId}
+                      {passengerNumber(user.passengerNumber) || '—'}
                     </td>
                     <td style={{ fontSize: '0.85rem' }}>
                       {user.phoneNumber || <span style={{ color: 'var(--text-muted)' }}>未綁定</span>}

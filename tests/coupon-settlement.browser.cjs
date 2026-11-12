@@ -21,7 +21,7 @@ window.calls=[];window.failAfterWrite=false;window.hold=false;window.previewDelt
 window.receipts=new Map(JSON.parse(sessionStorage.getItem('receipts')||'[]'));
 window.drivers=[{id:'one',name:'同名司機',carPlate:'TEA-5596'},{id:'two',name:'同名司機',carPlate:'XYZ-123'}];
 const saved=sessionStorage.getItem('rows');
-window.rows=saved?JSON.parse(saved):Array.from({length:13},(_,i)=>({id:'row'+i,orderId:'order'+i,readableId:String(478072+i),name:'2027來花蓮跨年V1',amount:50,redeemedAt:1794473647000+i,driverId:i===12?'two':'one',driverName:'同名司機',carPlate:i===12?'XYZ-123':'TEA-5596',passengerId:'p'+i,passengerName:i%2?'Jessica':'Bruce',settledAt:null,batchId:'1'}));
+window.rows=saved?JSON.parse(saved):Array.from({length:13},(_,i)=>({id:'row'+i,orderId:'order'+i,readableId:String(478072+i),name:'2027來花蓮跨年V1',amount:50,redeemedAt:1794473647000+i,driverId:i===12?'two':'one',driverName:'同名司機',carPlate:i===12?'XYZ-123':'TEA-5596',passengerId:'p'+i,passengerNumber:String(i+123).padStart(6,'0'),passengerName:i%2?'Jessica':'Bruce',settledAt:null,batchId:'1'}));
 window.fetch=async(url,options)=>{
  if(url!=='https://asia-east1-axeflowlotus-6dc3b.cloudfunctions.net/webAdmin')throw Error('Unexpected network');
  const x=JSON.parse(options.body);calls.push(x);let result;
@@ -83,6 +83,8 @@ window.fetch=async(url,options)=>{
     await fill('[aria-label="搜尋欄位"]','passenger');await fill('[aria-label="搜尋內容"]','jess');
     await wait(`document.querySelectorAll('tbody tr').length===6`);assert.equal(await enabled(),false);
     assert.equal(await run(`document.querySelector('.checkout-summary').textContent.includes('查詢合計：300')`),true);
+    await fill('[aria-label="搜尋內容"]','000123');await wait(`document.querySelectorAll('tbody tr').length===1`);
+    assert.equal(await run(`document.querySelector('tbody').textContent.includes('乘客編號：000123')`),true);assert.equal(await enabled(),false);
     await fill('[aria-label="搜尋欄位"]','order');await fill('[aria-label="搜尋內容"]','#478072');
     await wait(`document.querySelectorAll('tbody tr').length===1`);assert.equal(await enabled(),false);
     await fill('[aria-label="搜尋欄位"]','driver');await fill('[aria-label="搜尋內容"]','同名');
