@@ -1,5 +1,6 @@
 'use client';
 
+import { startSystemLog, stopSystemLog, logScreen } from '../lib/systemLogs/client';
 import React, { useState, useEffect } from 'react';
 import { auth, db } from '../firebase/config';
 import { doc, getDoc } from 'firebase/firestore';
@@ -43,6 +44,9 @@ export default function Home() {
   const [openTabs, setOpenTabs] = useState<string[]>(['overview']);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => { startSystemLog(); return stopSystemLog; }, []);
+  useEffect(() => { logScreen(activeTab); }, [activeTab]);
 
   // Restore Firebase Auth state on mount
   useEffect(() => {

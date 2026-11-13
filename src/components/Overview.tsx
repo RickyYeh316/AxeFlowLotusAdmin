@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase/config';
-import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit } from '../lib/loggedFirestore';
 import { Car, Users, ClipboardList, Tag, Clock, ArrowUpRight } from 'lucide-react';
 import { Driver, User, Order, Coupon, DriverTripStatus, DriverAccountStatus, UserTripStatus, UserAccountStatus, OrderStatus } from '../types';
 

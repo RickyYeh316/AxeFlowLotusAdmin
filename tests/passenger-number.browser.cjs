@@ -16,7 +16,7 @@ export function onAuthStateChanged(_auth, callback) { listeners.add(callback); q
 window.changeUser = uid => { auth.currentUser = uid ? { uid, getIdToken: async () => 'fixture-token' } : null; listeners.forEach(fn => fn(auth.currentUser)); };
 `);
 const loader = write('loader.cjs', `const ts=require(${JSON.stringify(require.resolve('typescript'))});module.exports=function(source){return ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true},fileName:this.resourcePath}).outputText}`);
-const entry = write('entry.js', `import React from 'react'; import {createRoot} from 'react-dom/client'; import Manager from ${JSON.stringify(path.join(root,'src/components/UserManager.tsx'))}; import Orders from ${JSON.stringify(path.join(root,'src/components/OrderManager.tsx'))}; const view=createRoot(document.getElementById('root')); window.showView=which=>view.render(React.createElement(which==='orders'?Orders:Manager)); window.showView('users');`);
+const entry = write('entry.js', `import {startSystemLog,logScreen} from ${JSON.stringify(path.join(root,'src/lib/systemLogs/client.ts'))}; import React from 'react'; import {createRoot} from 'react-dom/client'; import Manager from ${JSON.stringify(path.join(root,'src/components/UserManager.tsx'))}; import Orders from ${JSON.stringify(path.join(root,'src/components/OrderManager.tsx'))}; const view=createRoot(document.getElementById('root')); const createLog=window.LotusSystemLog.create; window.LotusSystemLog.create=o=>createLog({...o,intervalMs:20});startSystemLog();window.showView=which=>{logScreen(which);view.render(React.createElement(which==='orders'?Orders:Manager))}; window.showView('users');`);
 const store = write('firestore.js', `
 export const collection=(_db,name)=>({name});
 export const onSnapshot=(ref,callback)=>{let active=true;queueMicrotask(()=>{if(active)callback({forEach:fn=>(window.fixture[ref.name]||[]).forEach(d=>fn({id:d.id,data:()=>d.data}))})});return()=>{active=false}};
@@ -25,13 +25,13 @@ export const addDoc=()=>{throw Error('Unexpected write')};export const updateDoc
 export const doc=(_db,...parts)=>parts.join('/');export const serverTimestamp=()=>null;
 `);
 const fixture = `
-window.confirm=()=>false;window.fetch=()=>{throw Error('Unexpected network')};
+window.confirm=()=>false;window.uploadedLogs=[];window.fetch=async(url,init)=>{if(String(url).endsWith('/uploadSystemLogs')){const b=JSON.parse(init.body);window.uploadedLogs.push(b);return {ok:true,json:async()=>({batchId:b.batchId,accepted:b.events.length})}}throw Error('Unexpected network')};
 const numbers=['000123','123456','0123456','00001234',null];
 window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{name:'乘客'+i,displayName:'乘客'+i,passengerNumber:number,tripStatus:'IDLE',accountStatus:'ACTIVE',phoneNumber:'',createdAt:{toDate:()=>new Date('2026-11-13T00:00:00Z')},updatedAt:{toDate:()=>new Date('2026-11-13T00:00:00Z')}}})),drivers:[],orders:numbers.map((_,i)=>({id:'order-private-'+i,data:{userId:'MEMBER-private-'+i,passengerId:'MEMBER-private-'+i,passengerName:'乘客'+i,readableId:'8'+String(i).padStart(5,'0'),status:'COMPLETED',startAddress:'花蓮',endAddress:'吉安',createdAt:{toDate:()=>new Date('2026-11-13T00:00:00Z')},updatedAt:{toDate:()=>new Date('2026-11-13T00:00:00Z')}}}))};
 `;
 (async () => {
   await new Promise((resolve,reject)=>webpack({mode:'production',entry,output:{path:temp,filename:'bundle.js'},
-    resolve:{extensions:['.tsx','.ts','.js'],modules:[path.join(root,'node_modules'),'node_modules'],alias:{'../firebase/config':config,'firebase/auth':config,'firebase/firestore':store}},
+    resolve:{extensions:['.tsx','.ts','.js'],modules:[path.join(root,'node_modules'),'node_modules'],alias:{'../firebase/config':config,'../../firebase/config':config,'firebase/auth':config,'firebase/firestore':store}},
     module:{rules:[{test:/\.tsx?$/,use:loader}]},optimization:{minimize:false}},(err,stats)=>err?reject(err):stats.hasErrors()?reject(Error(stats.toString({all:false,errors:true}))):resolve()));
   const cssFile = fs.readdirSync(path.join(root,'.next/static/chunks')).find(f=>f.endsWith('.css'));
   const server = http.createServer((req,res)=>{
@@ -83,8 +83,11 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{nam
     await wait(`!!document.querySelector('option[value="MEMBER-private-0"]')`);
     assert.equal(await run(`document.querySelector('option[value="MEMBER-private-0"]').textContent`),'乘客0 · 000123');
     assert.equal(await run(`document.body.innerText.includes('MEMBER-private')`),false);
+    await wait(`window.uploadedLogs.some(b=>b.events.some(e=>e.type==='STREAM_STATE'))`);
+    assert.equal(await run(`uploadedLogs.every(b=>b.source==='webAdmin'&&b.owner==='test-admin')`),true);
+    assert.equal(await run(`JSON.stringify(uploadedLogs).includes('fixture-token')`),false);
     assert.deepEqual(errors,[]);
     console.log('PASS: 乘客列表／訂單／叫車選單外顯號、缺號破折號、前導零及六七八碼精確搜尋；選取值保持內碼。');
-    console.log('Screenshots: '+temp);
+    console.log('sysLog auth/stream upload fixture PASS. Screenshots: '+temp);
   } finally {ws?.close();chrome.kill('SIGTERM');await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;});

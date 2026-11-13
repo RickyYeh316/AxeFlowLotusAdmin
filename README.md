@@ -1,5 +1,13 @@
 # LotusAH — Web 管理介面
 
+## 11/13 三端sysLog（v2已部署回讀）
+
+現行build-2026-11-13-005（syslog-v3p1-20261113），READY／rollout SUCCEEDED且100%流量；線上8資產及22來源檔已核對。v2實單閉環／v3真實上報沿root既有證據，v3p1兩項競態已通過本機Chrome回歸，真人案例待驗；customer backend與GitHub codebase設定保持。
+
+`src/lib/systemLogs/client.ts`綁Firebase UID及作用中頁籤；`browser-core.js`與FBase `public/shared/system-log.js`保持逐字相同，使用IndexedDB、身分隔離、批次／重要事件上傳。`adminApi`與`loggedFirestore`接現有請求／結果／錯誤及監聽，僅白名單識別／狀態，不收集姓名、聊天、輸入內容或憑證。Firestore狀態按變更去重，既有交易及操作參數保持。
+
+新功能須檢查共用層覆蓋並補語意事件。修改Web核心後同步FBase原檔及本副本，跑`tests/browser/system-log.cjs`（FBase）；本端`tests/passenger-number.browser.cjs`同時驗證實際登入與Firestore事件進入上傳管線。完整需求、保存／權限、Agent查詢、部署與人工驗收狀態見Lotus root功能說明／交接，不另建操作Log UI。
+
 ## 11/13 乘客外顯編號
 
 - 乘客列表／排序／搜尋、訂單乘客資訊／搜尋、手動叫車乘客選單、發券選單／確認，以及優惠券結帳的乘客欄／搜尋，使用`passengerNumber`外顯字串；不在畫面顯示乘客內碼。
@@ -84,3 +92,17 @@ AH 既有畫面與讀寫流程已於 11/11 初步盤點；登入門禁、正式�
 - 此命令只指定 AH 管理端。發布後核對 build／rollout、100% 流量與線上資產；最新結果見共同 root 的交接及當日日誌。
 
 共同文件回 root 維護，過去工作日誌與封存附件唯讀。
+
+11/13 sysLog已發布：`build-2026-11-13-001` READY／rollout SUCCEEDED／100%流量，22個src發布來源與本機一致。本人瀏覽器既有登入、開頁／切頁已產生READY日誌與Storage JSONL，Agent依訂單查詢及digest通過。完整證據與其他端待驗見root當日日誌及三端系統日誌功能說明。
+
+11/13 sysLog v2：共用browser core改60秒／100筆、2秒合併／15秒最小間隔、80%配額節流及健康輪詢摘要；adminApi記錄HTTP分類、後端code與耗時，主要訂單／發券／結帳操作補固定識別。正式build及最終tsc通過，v2已部署回讀；發布須先更新FBase接收端白名單。
+
+11/13 #365469後續調查：三端v2上報與新單交易閉環已由Agent核對；LIFF回前景／完單畫面延遲證據已補齊；操作識別與多listener來源補強已由v3完成。完整數量、證據與界線集中於Lotus root三端系統日誌功能說明及11/13日誌；本輪未修改產品或部署。
+
+
+11/13 v3本機驗證、部署及線上回讀完成：Web `syslog-v3-20261113`、AOS `.syslog3`，批次schemaVersion仍1。追加layer／listenerId／initial／changeType／eventId、子頁識別、待傳與上傳失敗恢復狀態；API optional reason與派車sys_logs.dispatchDecision。先發uploadSystemLogs／driverAction／passengerAction／dispatchTask／npcDispatchConsole，再發Hosting／AH／AOS。共用browser core須逐字相同。查詢CLIENT_TIME_OUTSIDE_WINDOW現列warnings；gaps只表完整性問題。規格、範圍及部署回讀以Lotus root系統日誌功能說明／當日日誌為準。
+
+最終發布：uploadSystemLogs `uploadsystemlogs-00004-tez`、Hosting `e89c024b9bf6519c`、AH `build-2026-11-13-004`；AOS `.syslog3` 已保留資料安裝。每筆新事件保存details.clientVersion，query另回eventVersion；舊事件缺欄位為null，批次version只表示封批版本。接收端與AH來源封包、Hosting11個資源回讀相同；v3正式新單與離線／背景長時運轉待驗。
+
+
+11/13 review P2修正（已測試及部署回讀）：LIFF／AH共用browser core保留優先待送至對應事件ACK，busy／退避／配額期間續排；舊帳號ACK只更新原批次與配額，診斷新增前核對owner。兩Web版本`syslog-v3p1-20261113`，核心逐字一致。13項針對性Node及Chrome／IndexedDB競態回歸通過；AH production build／TypeScript通過，證據見root當日日誌。18:47 Hosting `165f4da74f6925ea`發布，18:50 AH `build-2026-11-13-005` READY／SUCCEEDED／100%流量；Hosting11資源、AH22來源檔逐字一致，8個AH線上資源HTTP200且含新版標識。AOS／FF／Rules／訂單交易保持，真人競態案例待驗。

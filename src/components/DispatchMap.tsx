@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { db } from '../firebase/config';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot } from '../lib/loggedFirestore';
 import { APIProvider, Map, useMap, AdvancedMarker } from '@vis.gl/react-google-maps';
 import { mapStyles } from '../data/mapStyles';
 import { Driver, Order, DriverTripStatus, DriverAccountStatus } from '../types';

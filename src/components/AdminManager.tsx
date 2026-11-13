@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase/config';
-import { collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, deleteDoc } from '../lib/loggedFirestore';
 import { Plus, Trash2, X, Check, Shield, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react';
 import { Admin } from '../types';
 

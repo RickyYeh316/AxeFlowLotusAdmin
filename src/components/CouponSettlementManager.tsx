@@ -158,14 +158,14 @@ export default function CouponSettlementManager() {
     <div className="glass content-sheet animate-fade-in">
       <div className="sheet-title-row">
         <h2 className="sheet-title">優惠券結帳{loading ? '' : ` (${filtered.length})`}</h2>
-        <div className="checkout-action"><button className="btn-primary" disabled={!canCheckout} onClick={() => void openCheckout()}>結帳</button>
+        <div className="checkout-action"><button className="btn-primary" disabled={!canCheckout} data-syslog="settlement.open" onClick={() => void openCheckout()}>結帳</button>
           {!canCheckout && !loading && <span className="coupon-help">請選定單一司機並切至未結帳；有待結款才可結帳。</span>}</div>
       </div>
       <div className="coupon-toolbar">
         {([['unsettled', '未結帳'], ['settled', '已結帳'], ['all', '全部']] as const).map(([value, label]) =>
           <button key={value} className={`category-pill ${view === value ? 'active' : ''}`} aria-pressed={view === value} disabled={locked}
             onClick={() => { setView(value); setPage(1); }}>{label}</button>)}
-        <button className="btn-secondary" disabled={locked || loading} onClick={() => void reload()}><RefreshCw size={14} />重新整理</button>
+        <button className="btn-secondary" disabled={locked || loading} data-syslog="settlement.refresh" onClick={() => void reload()}><RefreshCw size={14} />重新整理</button>
       </div>
       <div className="checkout-filters">
         <label>搜尋欄位 <select className="form-select" aria-label="搜尋欄位" value={field} disabled={locked} onChange={e => resetSearch(e.target.value as Field)}>
@@ -215,7 +215,7 @@ export default function CouponSettlementManager() {
       <p className="coupon-help">本次將結帳這位司機的全部未結帳優惠券。請先付現給司機，再確認結帳。</p>
       {feedback}
       <div className="modal-footer"><button className="btn-secondary" disabled={busy || !!pending} onClick={close}>取消</button>
-        <button className="btn-primary" disabled={busy || journalBlocked} onClick={() => void checkout(pending ?? undefined)}>
+        <button className="btn-primary" disabled={busy || journalBlocked} data-syslog="settlement.confirm" onClick={() => void checkout(pending ?? undefined)}>
           {busy ? '處理中…' : pending ? '重試原操作（不重複結帳）' : '已付現，確認結帳'}</button></div>
     </div></div>}
   </>;

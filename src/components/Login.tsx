@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { auth, googleProvider, db } from '../firebase/config';
 import { signInWithPopup, signInWithRedirect } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from '../lib/loggedFirestore';
 import { Shield, ShieldAlert, LogIn, Code } from 'lucide-react';
 
 interface LoginProps {

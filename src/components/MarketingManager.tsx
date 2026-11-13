@@ -143,7 +143,7 @@ export default function MarketingManager() {
   const recipient = passengers.find(p => p.id === selected);
   const close = () => { if (!disabled) { setEditing(undefined); setIssuing(null); setError(''); } };
   const feedback = <>{error && <p role="alert" className="coupon-error">{error}</p>}{notice && <p role="status">{notice}</p>}
-    {pending && <button className="btn-secondary" disabled={busy} onClick={() => void mutate(pending)}>{busy ? '處理中…' : '重試原操作（不重複發券）'}</button>}</>;
+    {pending && <button className="btn-secondary" disabled={busy} data-syslog="coupon.retry" onClick={() => void mutate(pending)}>{busy ? '處理中…' : '重試原操作（不重複發券）'}</button>}</>;
 
   return <>
     <div className="glass content-sheet animate-fade-in">
@@ -227,7 +227,7 @@ export default function MarketingManager() {
           <p className="coupon-preview-text">{issuing.notificationPreview || '訊息預覽尚未取得，請關閉後重新整理。'}</p>
           <p className="coupon-help">配券成功後發送；通知失敗不補送，優惠券仍保留。</p>
         </section>}
-        <div className="modal-footer"><button type="button" className="btn-secondary" disabled={disabled} onClick={close}>取消</button><button className="btn-primary" disabled={disabled || (notifyPassenger && !issuing.notificationPreview) || (issuing.type !== 2 && (membersLoading || !recipient))}>確認發券</button></div>
+        <div className="modal-footer"><button type="button" className="btn-secondary" disabled={disabled} onClick={close}>取消</button><button className="btn-primary" disabled={disabled || (notifyPassenger && !issuing.notificationPreview) || (issuing.type !== 2 && (membersLoading || !recipient))} data-syslog="coupon.issue_confirm">確認發券</button></div>
       </form> : <form onSubmit={e => {
         e.preventDefault(); if (disabled) return;
         const amount = Number(form.discountAmount);

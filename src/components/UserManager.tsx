@@ -4,7 +4,7 @@ import { passengerNumber } from '../lib/passengerNumber';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase/config';
-import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc } from '../lib/loggedFirestore';
 import { Search, UserCheck, ShieldAlert, Award, ChevronUp, ChevronDown, Trash2, Ban, CheckCircle } from 'lucide-react';
 import { User, UserTripStatus, UserAccountStatus } from '../types';
 

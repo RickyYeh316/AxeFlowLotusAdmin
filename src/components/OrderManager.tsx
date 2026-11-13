@@ -4,7 +4,7 @@ import { passengerNumber } from '../lib/passengerNumber';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase/config';
-import { collection, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, Timestamp } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, Timestamp } from '../lib/loggedFirestore';
 import { Plus, X, Check, Compass, AlertCircle, ShoppingBag, MapPin, Search, ChevronUp, ChevronDown, Trash2, Calendar } from 'lucide-react';
 import { Order, Driver, User, OrderStatus, DriverTripStatus, DriverAccountStatus, UserTripStatus, UserAccountStatus } from '../types';
 
@@ -561,14 +561,14 @@ export default function OrderManager() {
         <div>
           <h2 className="sheet-title">訂單管理 ({filteredOrders.length})</h2>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button onClick={() => setStatusFilter('all')} className={`category-pill ${statusFilter === 'all' ? 'active' : ''}`}>全部訂單</button>
-            <button onClick={() => setStatusFilter('active')} className={`category-pill ${statusFilter === 'active' ? 'active' : ''}`}>進行中</button>
-            <button onClick={() => setStatusFilter('completed')} className={`category-pill ${statusFilter === 'completed' ? 'active' : ''}`}>已完成</button>
-            <button onClick={() => setStatusFilter('closed')} className={`category-pill ${statusFilter === 'closed' ? 'active' : ''}`}>已取消</button>
+            <button data-syslog="order.filter.all" onClick={() => setStatusFilter('all')} className={`category-pill ${statusFilter === 'all' ? 'active' : ''}`}>全部訂單</button>
+            <button data-syslog="order.filter.active" onClick={() => setStatusFilter('active')} className={`category-pill ${statusFilter === 'active' ? 'active' : ''}`}>進行中</button>
+            <button data-syslog="order.filter.completed" onClick={() => setStatusFilter('completed')} className={`category-pill ${statusFilter === 'completed' ? 'active' : ''}`}>已完成</button>
+            <button data-syslog="order.filter.closed" onClick={() => setStatusFilter('closed')} className={`category-pill ${statusFilter === 'closed' ? 'active' : ''}`}>已取消</button>
           </div>
         </div>
 
-        <button onClick={handleOpenDispatch} className="btn-primary">
+        <button data-syslog="order.open_dispatch" onClick={handleOpenDispatch} className="btn-primary">
           <Plus size={16} />
           手動派遣叫車
         </button>
@@ -633,7 +633,7 @@ export default function OrderManager() {
             </thead>
             <tbody>
               {paginatedOrders.map((order) => (
-                <tr key={order.id}>
+                <tr data-log-order={order.id} key={order.id}>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       {order.passengerAvatar ? (
@@ -695,7 +695,7 @@ export default function OrderManager() {
                       {((order.status as any) === 1 || String(order.status) === 'ACCEPTED' || String(order.status) === 'IN_PROGRESS' || String(order.status) === 'ARRIVED' || String(order.status) === 'PENDING' || String(order.status) === 'MATCHING') && (
                         <>
                           <button 
-                            onClick={() => handleUpdateOrderStatus(order.id, 'complete', order.driverId || '')}
+                            data-syslog="order.complete" onClick={() => handleUpdateOrderStatus(order.id, 'complete', order.driverId || '')}
                             className="btn-icon edit" 
                             style={{ borderColor: 'rgba(16, 185, 129, 0.3)', color: 'var(--color-success)' }}
                             title="完成行程"
@@ -703,7 +703,7 @@ export default function OrderManager() {
                             <Check size={14} />
                           </button>
                           <button 
-                            onClick={() => handleUpdateOrderStatus(order.id, 'cancel', order.driverId || '')}
+                            data-syslog="order.cancel" onClick={() => handleUpdateOrderStatus(order.id, 'cancel', order.driverId || '')}
                             className="btn-icon delete" 
                             title="取消叫車"
                           >
@@ -711,7 +711,7 @@ export default function OrderManager() {
                           </button>
                         </>
                       )}
-                      <button onClick={() => handleDeleteOrder(order.id)} className="btn-icon delete" title="刪除記錄">
+                      <button data-syslog="order.delete" onClick={() => handleDeleteOrder(order.id)} className="btn-icon delete" title="刪除記錄">
                         <Trash2 size={14} />
                       </button>
                     </div>
