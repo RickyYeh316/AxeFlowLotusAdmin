@@ -1,8 +1,12 @@
 # LotusAH — Web 管理介面
 
+## 11/13 NPC 退場（已部署回讀，待真人驗收）
+
+移除 MarketingManager 發券名單的 isNPC 分流及資料型別欄位；沿既有 ACTIVE／LINE 資格、乘客外碼、內碼交易、券管理與 sysLog。production build 與發券 Chrome fixture 通過。本輪 build-2026-11-13-007 已 READY／SUCCEEDED／100% 流量；22 來源檔逐字核對，8 線上資產正常；完整跨端退場範圍及正式入口保留見 Lotus root「NPC退場與正式入口保留.md」。
+
 ## 11/13 三端sysLog（v2已部署回讀）
 
-現行build-2026-11-13-005（syslog-v3p1-20261113），READY／rollout SUCCEEDED且100%流量；線上8資產及22來源檔已核對。v2實單閉環／v3真實上報沿root既有證據，v3p1兩項競態已通過本機Chrome回歸，真人案例待驗；customer backend與GitHub codebase設定保持。
+現行build-2026-11-13-007（syslog-v3p1-20261113），READY／rollout SUCCEEDED且100%流量；線上8資產及22來源檔已核對。v2實單閉環／v3真實上報沿root既有證據，v3p1兩項競態已通過本機Chrome回歸，真人案例待驗；customer backend與GitHub codebase設定保持。
 
 `src/lib/systemLogs/client.ts`綁Firebase UID及作用中頁籤；`browser-core.js`與FBase `public/shared/system-log.js`保持逐字相同，使用IndexedDB、身分隔離、批次／重要事件上傳。`adminApi`與`loggedFirestore`接現有請求／結果／錯誤及監聽，僅白名單識別／狀態，不收集姓名、聊天、輸入內容或憑證。Firestore狀態按變更去重，既有交易及操作參數保持。
 

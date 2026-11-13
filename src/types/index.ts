@@ -58,7 +58,6 @@ export interface Driver {
   carPlate?: string; // Compatibility alias
   tripStatus: DriverTripStatus;
   accountStatus: DriverAccountStatus;
-  isNPC?: boolean;
   avatar?: string; // UI avatar
   phone?: string; // UI phone
   carColor?: string; // Optional metadata
@@ -88,7 +87,6 @@ export interface User {
   displayName?: string; // Compatibility alias
   tripStatus: UserTripStatus;
   accountStatus: UserAccountStatus;
-  isNPC?: boolean;
   phoneNumber?: string;
   currentOrderId?: string;
   noShowCount: number;
@@ -108,7 +106,6 @@ export interface Order {
   passengerId?: string; // Compatibility alias
   driverId?: string;
   status: OrderStatus;
-  isNPC?: boolean;
   pickupLocation: {
     lat: number;
     lng: number;

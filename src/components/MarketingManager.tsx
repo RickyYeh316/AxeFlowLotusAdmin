@@ -12,7 +12,7 @@ type Version = { seconds: number; nanoseconds: number };
 type Distribution = { state: 'PENDING' | 'FAILED' | 'COMPLETED'; issuedCount: number; skippedCount: number; lastError: string };
 type CouponRow = { id: string; type: number | null; title: string; description: string; discountAmount: number;
   status: string; startDate: string; endDate: string; expiresAtMillis: number | null; version: Version; notificationPreview?: string | null; distribution?: Distribution | null };
-type Passenger = { id: string; passengerNumber?: string; name: string; phoneNumber: string; accountStatus: string; isNPC: boolean; lineUid: string };
+type Passenger = { id: string; passengerNumber?: string; name: string; phoneNumber: string; accountStatus: string; lineUid: string };
 type Form = { type: number; title: string; description: string; discountAmount: string; startDate: string; endDate: string };
 type Request = Record<string, unknown>;
 const typeName = (type: number | null) => ({ 1: '新戶優惠券', 2: '活動優惠券', 3: '補償優惠券' }[type ?? 0] || '類型待確認');
@@ -125,7 +125,7 @@ export default function MarketingManager() {
         if (generation !== scope.current) return;
         all.push(...result.items); after = result.after;
       } while (after);
-      setPassengers(all.filter(p => !p.isNPC && p.accountStatus === 'ACTIVE' && /^U[0-9a-f]{32}$/.test(p.lineUid)));
+      setPassengers(all.filter(p => p.accountStatus === 'ACTIVE' && /^U[0-9a-f]{32}$/.test(p.lineUid)));
     } catch (e) { if (generation === scope.current) setError((e as Error).message); }
     finally { if (generation === scope.current) setMembersLoading(false); }
   }
