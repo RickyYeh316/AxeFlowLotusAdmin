@@ -84,8 +84,7 @@ export interface User {
   id?: string; // UID / LINE UID
   userId: string; // 乘客內碼，資料與操作關聯保持
   passengerNumber?: string; // 外顯乘客編號，保留前導零
-  name: string; // Negotiated name
-  displayName?: string; // Compatibility alias
+  passengerName: string; // 會員目前姓名；訂單另存建單時快照
   tripStatus: UserTripStatus;
   accountStatus: UserAccountStatus;
   phoneNumber?: string;

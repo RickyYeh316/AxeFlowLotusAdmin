@@ -186,8 +186,7 @@ export default function OrderManager() {
         list.push({
           userId: doc.id,
           passengerNumber: passengerNumber(data.passengerNumber),
-          name: data.name || data.displayName || '',
-          displayName: data.displayName || data.name || '',
+          passengerName: data.passengerName || '',
           pictureUrl: data.pictureUrl || '',
           tripStatus: parsedTripStatus as UserTripStatus,
           accountStatus: parsedAccountStatus as UserAccountStatus,

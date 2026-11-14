@@ -15,7 +15,7 @@ export default function UserManager() {
 
   // Sorting State
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'ascending' | 'descending' } | null>({
-    key: 'name',
+    key: 'passengerName',
     direction: 'ascending'
   });
 
@@ -55,8 +55,7 @@ export default function UserManager() {
           userId: doc.id,
           passengerNumber: passengerNumber(data.passengerNumber),
           id: doc.id,
-          name: data.name || data.displayName || '未設定名稱',
-          displayName: data.displayName || data.name || '未設定名稱',
+          passengerName: data.passengerName || '未設定名稱',
           pictureUrl: data.pictureUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
           tripStatus: parsedTripStatus as UserTripStatus,
           accountStatus: parsedAccountStatus as UserAccountStatus,
@@ -96,7 +95,7 @@ export default function UserManager() {
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
       const searchLower = searchQuery.trim().toLowerCase();
-      const nameMatch = user.name.toLowerCase().includes(searchLower) || user.displayName?.toLowerCase().includes(searchLower);
+      const nameMatch = user.passengerName.toLowerCase().includes(searchLower);
       const idMatch = passengerNumber(user.passengerNumber) === searchLower;
       const phoneMatch = (user.phoneNumber || '').toLowerCase().includes(searchLower);
       const matchesSearch = nameMatch || idMatch || phoneMatch;
@@ -124,7 +123,7 @@ export default function UserManager() {
     const newStatus = isBanned ? UserAccountStatus.ACTIVE : UserAccountStatus.BANNED;
     const actionText = isBanned ? '解除停權' : '執行停權';
     
-    if (window.confirm(`確定要對乘客 ${user.name} ${actionText} 嗎？`)) {
+    if (window.confirm(`確定要對乘客 ${user.passengerName} ${actionText} 嗎？`)) {
       try {
         await updateDoc(doc(db, 'users', user.userId), {
           accountStatus: newStatus,
@@ -308,7 +307,7 @@ export default function UserManager() {
           <table className="admin-table">
             <thead>
               <tr>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('name')}>乘客名稱 {getSortIcon('name')}</th>
+                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('passengerName')}>乘客名稱 {getSortIcon('passengerName')}</th>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('passengerNumber')}>乘客編號 {getSortIcon('passengerNumber')}</th>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('phoneNumber')}>聯絡電話 {getSortIcon('phoneNumber')}</th>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('accountStatus')}>帳號權限 {getSortIcon('accountStatus')}</th>
@@ -341,8 +340,8 @@ export default function UserManager() {
                   <tr key={user.userId}>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <img src={user.pictureUrl} alt={user.name} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-color)' }} />
-                        <span style={{ fontWeight: 700 }}>{user.name}</span>
+                        <img src={user.pictureUrl} alt={user.passengerName} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-color)' }} />
+                        <span style={{ fontWeight: 700 }}>{user.passengerName}</span>
                       </div>
                     </td>
                     <td style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>

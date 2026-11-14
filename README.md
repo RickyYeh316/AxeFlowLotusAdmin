@@ -1,5 +1,11 @@
 # LotusAH — Web 管理介面
 
+## 乘客姓名統一（11/15）
+
+會員姓名唯一欄位為 `users.passengerName`；UserManager 的顯示／搜尋／排序／確認文字、OrderManager 的會員資料解碼、MarketingManager 的 USERS 回應／選擇器／發券確認皆對齊。COUPON_LEDGER 由 FF 回傳會員目前 passengerName；訂單列表／詳情保持 orders.passengerName 的當時快照。會員 name／displayName 相容分支在資料遷移後撤下。
+
+每次 LIFF 登入以驗證取得的有效 LINE 姓名更新會員，外顯 passengerNumber 固定；本批不修改電話、舊棄單次數、帳號／行程狀態、日期格式及管理操作。共用 loggedFirestore／adminApi 的 sysLog 白名單保持，不加入姓名內容。部署與 3 位正式會員資料轉換、真人驗收狀態見 Lotus root 最新交接。
+
 ## 訂單列表司機／搜尋 hotfix
 
 列表完成單沿既有 ORDER_DETAIL 管理員 API，讀與詳情相同的 USER 終態卡姓名／車牌，無卡時沿 API 的原單 fallback；其他狀態仍讀原單。快照最多四筆並行，依訂單／乘客／updatedAt 版本快取；換帳號／離頁／較新快照忽略舊結果，重新整理重讀。讀取失敗顯示明確警示與重試，不當作未提供。搜尋共用顯示姓名／車牌，乘客編號改部分比對並保留前導零，提示列明訂單編號、乘客姓名／編號、車牌、司機姓名、上車地／目的地。移除乘車類型下拉與篩選條件，四分類與子類維持。

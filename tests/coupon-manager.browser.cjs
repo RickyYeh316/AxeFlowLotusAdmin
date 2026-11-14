@@ -29,7 +29,7 @@ window.fetch=async(url,options)=>{
  if(options.headers.Authorization!=='Bearer fixture-token')throw Error('Missing token');
  const x=JSON.parse(options.body);calls.push(x);let result;
  if(x.action==='COUPONS')result={items:rows.map(r=>({...r,notificationPreview:'您收到一張優惠券！\\n\\n'+r.title+' · 折抵'+r.discountAmount+'元\\n使用期間：'+r.startDate+'～'+r.endDate+'\\n\\n查看我的優惠券\\nhttps://liff.line.me/2012269566-puD0ISKR?tab=other&view=coupons'})),after:null};
- else if(x.action==='USERS')result={items:[{id:'MEMBER-test',passengerNumber:'000123',name:'Jessica 測試乘客',phoneNumber:'0900000000',isNPC:false,accountStatus:'ACTIVE',lineUid:'U'+'a'.repeat(32)}],after:null};
+ else if(x.action==='USERS')result={items:[{id:'MEMBER-test',passengerNumber:'000123',passengerName:'Jessica 測試乘客',phoneNumber:'0900000000',isNPC:false,accountStatus:'ACTIVE',lineUid:'U'+'a'.repeat(32)}],after:null};
  else if(receipts.has(x.operationId))result=receipts.get(x.operationId);
  else {
   if(x.action==='COUPON_CREATE') { result={id:'new'+(++counter)};rows.push({...x,id:result.id,status:'draft',version:{seconds:2,nanoseconds:0},expiresAtMillis:2208960000000}); }
