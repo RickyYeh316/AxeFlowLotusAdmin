@@ -20,7 +20,7 @@ const loader = write('loader.cjs', `const ts=require(${JSON.stringify(require.re
 const entry = write('entry.js', `import {startSystemLog,logScreen} from ${JSON.stringify(path.join(root,'src/lib/systemLogs/client.ts'))}; import React from 'react'; import {createRoot} from 'react-dom/client'; import Manager from ${JSON.stringify(path.join(root,'src/components/UserManager.tsx'))}; import Orders from ${JSON.stringify(path.join(root,'src/components/OrderManager.tsx'))}; const view=createRoot(document.getElementById('root')); const createLog=window.LotusSystemLog.create; window.LotusSystemLog.create=o=>createLog({...o,intervalMs:20,uploadIntervalMs:0,minUploadMs:0,priorityDelayMs:0});startSystemLog();window.showView=which=>{logScreen(which);view.render(React.createElement(which==='orders'?Orders:Manager))}; window.showView('users');`);
 const store = write('firestore.js', `
 export const collection=(_db,name)=>({name});
-export const onSnapshot=(ref,callback)=>{let active=true;queueMicrotask(()=>{if(active)callback({forEach:fn=>(window.fixture[ref.name]||[]).forEach(d=>fn({id:d.id,data:()=>d.data}))})});return()=>{active=false}};
+export const onSnapshot=(ref,callback)=>{let active=true;const emit=()=>{if(active)callback({forEach:fn=>(window.fixture[ref.name]||[]).forEach(d=>fn({id:d.id,data:()=>d.data}))})};if(ref.name==='orders')window.reemitOrders=emit;queueMicrotask(emit);return()=>{active=false}};
 export const Timestamp={now:()=>({toDate:()=>new Date()}),fromDate:v=>v};
 export const addDoc=()=>{throw Error('Unexpected write')};export const updateDoc=addDoc;export const deleteDoc=addDoc;
 export const doc=(_db,...parts)=>parts.join('/');export const serverTimestamp=()=>null;
@@ -78,9 +78,9 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{nam
     await fill('input.search-input','');await wait(`document.querySelectorAll('tbody tr').length===5`);
     await run(`document.getAnimations().forEach(a=>a.finish())`);
     fs.writeFileSync(path.join(temp,'users.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
-    await run(`showView('orders')`);await wait(`document.querySelectorAll('tbody tr').length===5`);
+    await run(`showView('orders')`);await wait(`document.querySelector('[data-syslog="order.filter.serving"]')?.getAttribute('aria-pressed')==='true'`);await run(`document.querySelector('[data-syslog="order.filter.all"]').click()`);await wait(`document.querySelectorAll('tbody tr').length===5`);
     assert.equal(await run(`document.querySelector('tbody').textContent.includes('MEMBER-private')`),false);
-    await fill('input.search-input','123456');await wait(`document.querySelectorAll('tbody tr').length===1`);
+    await fill('input.search-input','123456');await wait(`document.querySelectorAll('tbody tr').length===2`);
     assert.equal(await run(`document.querySelector('tbody').textContent.includes('123456')`),true);
     await fill('input.search-input','000123');await wait(`document.querySelector('tbody').textContent.includes('000123')`);
     await fill('input.search-input','');await wait(`document.querySelectorAll('tbody tr').length===5`);
@@ -102,13 +102,33 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{nam
     assert.equal(await run(`document.querySelector('tbody').innerText.includes('2026/11/13 08:00:00')`),true);
     await fill('input.search-input','TEA-5596');await wait(`document.querySelectorAll('tbody tr').length===1`);
     assert.equal(await run(`document.querySelector('tbody').innerText.includes('測試司機') && document.querySelector('tbody').innerText.includes('未輸入')`),true);
+    await fill('input.search-input','HIS-0001');await wait(`document.querySelectorAll('tbody tr').length===1`);
+    assert.equal(await run(`document.querySelector('tbody tr').dataset.logOrder`),'order-private-1');
+    assert.equal(await run(`document.querySelector('tbody').innerText.includes('歷史快照司機')`),true);
+    await fill('input.search-input','歷史快照');await wait(`document.querySelectorAll('tbody tr').length===1`);
+    assert.equal(await run(`document.querySelector('tbody tr').dataset.logOrder`),'order-private-1');
+    await fill('input.search-input','23456');await wait(`document.querySelectorAll('tbody tr').length===2`);
+    assert.deepEqual(await run(`[...document.querySelectorAll('tbody tr')].map(r=>r.dataset.logOrder).sort()`),['order-private-1','order-private-2']);
+    assert.equal(await run(`document.body.innerText.includes('乘車類型')`),false);
+    assert.equal(await run(`document.querySelector('input.search-input').placeholder.includes('乘客編號')`),true);
+    await fill('input.search-input','');
+    await run(`window.listFailure='order-private-1'`);await click('重新整理');
+    await wait(`document.querySelector('[role="alert"]')?.textContent.includes('部分司機資料讀取失敗')`);
+    assert.equal(await run(`document.querySelector('[data-log-order="order-private-1"]').innerText.includes('司機資料讀取失敗')`),true);
+    await run(`window.listFailure=null`);await click('重新整理');
+    await wait(`document.querySelector('[data-log-order="order-private-1"]')?.innerText.includes('歷史快照司機')`);
+    assert.equal(await run(`document.querySelector('[role="alert"]')===null`),true);
+    const detailReadsBeforeCache=await run(`adminReads.filter(p=>p.action==='ORDER_DETAIL').length`);
+    await run(`reemitOrders()`);await wait(`!document.querySelector('[data-syslog="order.refresh"]').disabled`);
+    assert.equal(await run(`adminReads.filter(p=>p.action==='ORDER_DETAIL').length`),detailReadsBeforeCache);
+    console.log('PASS: 完單原司機空值取詳情快照、車牌與司機部分搜尋、乘客部分編號、移除乘車類型、讀取失敗提示及重試恢復。');
     await fill('input.search-input','#800000');await wait(`document.querySelectorAll('tbody tr').length===1`);
     await fill('input.search-input','');await wait(`document.querySelectorAll('tbody tr').length===5`);
     // 不同瀏覽器時區仍顯示 Asia/Taipei；updatedAt 決定預設順序，獨立於 createdAt。
     await send('Emulation.setTimezoneOverride',{timezoneId:'America/Los_Angeles'});
     await run(`fixture.orders[0].data.updatedAt={toDate:()=>new Date('2026-11-14T02:00:00Z')};fixture.orders[1].data.updatedAt={toDate:()=>new Date('2026-11-14T03:00:00Z')};showView('users')`);
     await wait(`document.body.innerText.includes('乘客管理')`);
-    await run(`showView('orders')`);await wait(`document.querySelectorAll('tbody tr').length===5`);
+    await run(`showView('orders')`);await wait(`document.querySelector('[data-syslog="order.filter.serving"]')?.getAttribute('aria-pressed')==='true'`);await run(`document.querySelector('[data-syslog="order.filter.all"]').click()`);await wait(`document.querySelectorAll('tbody tr').length===5`);
     assert.equal(await run(`document.querySelector('tbody tr').getAttribute('data-log-order')`),'order-private-1');
     assert.equal(await run(`document.querySelector('tbody tr').innerText.includes('2026/11/14 11:00:00')`),true);
     await run(`document.getAnimations().forEach(a=>a.finish())`);
@@ -116,27 +136,120 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{nam
     await send('Emulation.setDeviceMetricsOverride',{width:1100,height:900,deviceScaleFactor:1,mobile:false});
     fs.writeFileSync(path.join(temp,'orders-1100.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
 
+    // v4：完整現行狀態矩陣，分類以整單生命週期判定，預約必須讀子狀態。
+    await run(`window.savedOrders=fixture.orders;fixture.orders=[['ACCEPTED'],['ARRIVED'],['IN_PROGRESS'],['SCHEDULED','CLAIMED'],['SCHEDULED','CONFIRMED'],['SCHEDULED','OPEN'],['PENDING'],['MATCHING'],['FAILED_MATCH'],['DRIVER_CANCELLED'],['NO_SHOW'],['COMPLETED'],['CANCELLED_BY_USER'],['FUTURE_STATUS']].map(([status,reservationState],i)=>({id:'state-'+i,data:{...savedOrders[0].data,status,reservationState,readableId:String(700000+i)}}));showView('users')`);
+    await wait(`document.body.innerText.includes('乘客管理')`);
+    await run(`showView('orders')`);
+    await wait(`document.querySelectorAll('tbody tr').length===5`);
+    assert.equal(await run(`document.querySelector('[aria-pressed="true"]').textContent`),'服務中 (5)');
+    const ids=()=>run(`[...document.querySelectorAll('tbody tr')].map(r=>r.dataset.logOrder).sort()`);
+    assert.deepEqual(await ids(),['state-0','state-1','state-2','state-3','state-4']);
+    assert.equal(await run(`getComputedStyle(document.querySelector('.order-status')).borderColor`),'rgb(102, 178, 146)');
+    await run(`document.querySelector('[data-syslog="order.filter.waiting"]').click()`);await wait(`document.querySelectorAll('tbody tr').length===6`);
+    assert.deepEqual(await ids(),['state-10','state-5','state-6','state-7','state-8','state-9']);
+    assert.equal(await run(`document.querySelectorAll('.order-status').length`),6);
+    assert.equal(await run(`getComputedStyle(document.querySelector('.order-status')).borderColor`),'rgb(214, 179, 92)');
+    assert.equal(await run(`document.querySelector('[data-log-order="state-9"]').innerText.includes('司機中止服務／待乘客決定')`),true);
+    await click('重新整理');await wait(`document.querySelectorAll('tbody tr').length===6`);
+    assert.equal(await run(`document.querySelector('[data-syslog="order.filter.waiting"]').getAttribute('aria-pressed')`),'true');
+    await run(`document.querySelector('[data-syslog="order.filter.closed"]').click()`);await wait(`document.querySelectorAll('tbody tr').length===2`);
+    assert.deepEqual(await ids(),['state-11','state-12']);
+    assert.equal(await run(`getComputedStyle(document.querySelector('.order-status')).borderColor`),'rgb(196, 123, 139)');
+    await run(`document.querySelector('[data-syslog="order.filter.all"]').click()`);await wait(`document.querySelectorAll('tbody tr').length===10`);
+    await fill('input.search-input','#700013');await wait(`document.querySelectorAll('tbody tr').length===1`);
+    assert.equal(await run(`document.querySelector('.order-status').textContent`),'訂單狀態待確認');
+    assert.equal(await run(`getComputedStyle(document.querySelector('.order-status')).borderColor`),'rgb(129, 147, 171)');
+    await fill('input.search-input','');await wait(`document.querySelectorAll('tbody tr').length===10`);
+    await run(`document.getAnimations().forEach(a=>a.finish())`);
+    fs.writeFileSync(path.join(temp,'orders-v4.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    await wait(`window.uploadedLogs.some(b=>b.events.some(e=>e.type==='UI_CLICK'&&e.details.control==='order.refresh'))`);
+    // v4.5：子選單跟隨選中的大類；各細項、重整保留、跨分類重設、搜尋交集。
+    for (const [group, keys, expected] of [
+      ['serving',['ACCEPTED','ARRIVED','IN_PROGRESS','SCHEDULED.CLAIMED','SCHEDULED.CONFIRMED'],[0,1,2,3,4]],
+      ['waiting',['SCHEDULED.OPEN','PENDING','MATCHING','FAILED_MATCH','DRIVER_CANCELLED','NO_SHOW'],[5,6,7,8,9,10]],
+      ['closed',['COMPLETED','CANCELLED_BY_USER'],[11,12]],
+      ['all',['UNKNOWN'],[13]],
+    ]) {
+      await run(`document.querySelector('[data-syslog="order.filter.${group}"]').click()`);
+      await wait(`document.querySelector('.order-subcategory')?.value==='all'`);
+      assert.equal(await run(`document.querySelectorAll('.order-subcategory').length`),1);
+      assert.equal(await run(`document.querySelector('.order-subcategory').previousElementSibling.dataset.syslog`),'order.filter.'+group);
+      for (let i=0;i<keys.length;i++) {
+        await fill('.order-subcategory',keys[i]);await wait(`document.querySelectorAll('tbody tr').length===1`);
+        assert.deepEqual(await ids(),['state-'+expected[i]]);
+      }
+    }
+    await run(`document.querySelector('[data-syslog="order.filter.waiting"]').click()`);
+    await fill('.order-subcategory','FAILED_MATCH');await wait(`document.querySelectorAll('tbody tr').length===1`);
+    await click('重新整理');await wait(`!document.querySelector('[data-syslog="order.refresh"]').disabled`);
+    assert.equal(await run(`document.querySelector('.order-subcategory').value`),'FAILED_MATCH');
+    assert.deepEqual(await ids(),['state-8']);
+    await fill('input.search-input','#700009');await wait(`document.querySelectorAll('tbody tr').length===0`);
+    await fill('input.search-input','');await wait(`document.querySelectorAll('tbody tr').length===1`);
+    await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:false});
+    assert.equal(await run(`(()=>{const s=document.querySelector('.order-subcategory').getBoundingClientRect(), b=document.querySelector('[aria-pressed="true"]').getBoundingClientRect();return Math.abs(s.top+s.height/2-b.top-b.height/2)<2 && s.right<=390;})()`),true);
+    await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+    await run(`document.getAnimations().forEach(a=>a.finish())`);
+    fs.writeFileSync(path.join(temp,'orders-v4.5.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    await wait(`window.uploadedLogs.some(b=>b.events.some(e=>e.details.control==='order.subcategory'&&e.details.action==='FAILED_MATCH'))`);
+    console.log('PASS: v4.5 各子類精確篩選、選單隨大類移動、切換重設、重整保留、搜尋交集、390px 成組換行與 sysLog。');
+    await run(`fixture.orders=savedOrders`);
+
+    console.log('PASS: v4 預設服務中、全部現行狀態／預約子狀態、待決定仍進行中、黃綠紅框、未知狀態、分類筆數與重新整理保留條件。');
     // 分頁與預約狀態篩選仍可用；只有當頁呈現資料列。
     await run(`fixture.orders=Array.from({length:12},(_,i)=>({id:'page-'+i,data:{...fixture.orders[0].data,readableId:String(900000+i),status:i===0?'SCHEDULED':'COMPLETED'}}));showView('users')`);
     await wait(`document.body.innerText.includes('乘客管理')`);
-    await run(`showView('orders')`);await wait(`document.querySelectorAll('tbody tr').length===10`);
+    await run(`showView('orders')`);await wait(`document.querySelector('[data-syslog="order.filter.serving"]')?.getAttribute('aria-pressed')==='true'`);await run(`document.querySelector('[data-syslog="order.filter.all"]').click()`);await wait(`document.querySelectorAll('tbody tr').length===10`);
     await click('下一頁');await wait(`document.querySelectorAll('tbody tr').length===2`);
-    await click('進行中');await wait(`document.querySelectorAll('tbody tr').length===1`);
-    assert.equal(await run(`document.querySelector('tbody').innerText.includes('預約中')`),true);
+    await run(`document.querySelector('[data-syslog="order.filter.waiting"]').click()`);await wait(`document.querySelectorAll('tbody tr').length===1`);
+    assert.equal(await run(`document.querySelector('tbody').innerText.includes('預約狀態待確認')`),true);
     assert.equal(await run(`document.body.innerText.includes('MEMBER-private')`),false);
     await wait(`window.uploadedLogs.some(b=>b.events.some(e=>e.type==='STREAM_STATE'))`);
     await wait(`window.uploadedLogs.some(b=>b.events.some(e=>e.type==='UI_CLICK'&&e.details.control==='order.pickup_map'&&e.details.orderId==='order-private-0'))`);
     assert.equal(await run(`uploadedLogs.every(b=>b.source==='webAdmin'&&b.owner==='test-admin')`),true);
     assert.equal(await run(`JSON.stringify(uploadedLogs).includes('fixture-token')`),false);
 
+    // v5.2：兩個新增欄位皆可升降冪，缺目的地仍可排序。
+    await run(`document.querySelector('[data-syslog="order.filter.all"]').click()`);await wait(`document.querySelectorAll('tbody tr').length===10`);
+    await run(`document.querySelector('[data-syslog="order.sort.number"]').click()`);await wait(`document.querySelector('tbody tr').dataset.logOrder==='page-0'`);
+    await run(`document.querySelector('[data-syslog="order.sort.number"]').click()`);await wait(`document.querySelector('tbody tr').dataset.logOrder==='page-11'`);
+    await run(`fixture.orders.forEach((o,i)=>o.data.endAddress=i===0?undefined:'目的地'+String(i));reemitOrders()`);
+    await run(`document.querySelector('[data-syslog="order.sort.destination"]').click()`);await wait(`document.querySelector('tbody tr').dataset.logOrder==='page-0'`);
+    await run(`document.querySelector('[data-syslog="order.sort.destination"]').click()`);await wait(`document.querySelector('tbody tr').dataset.logOrder==='page-11'`);
+
     // v3：真實 OrderDetail + iframe + 共用乘客卡／地圖／對話，HTTP/Maps 使用隔離資料。
-    await click('全部訂單');await wait(`document.querySelectorAll('tbody tr').length===10`);
+    await run(`document.querySelector('[data-syslog="order.filter.all"]').click()`);await wait(`document.querySelectorAll('tbody tr').length===10`);
+    await click('下一頁');await wait(`document.querySelectorAll('tbody tr').length===2`);
+    await run(`window.beforeShrink=fixture.orders;fixture.orders=fixture.orders.slice(0,5)`);await click('重新整理');
+    await wait(`document.querySelectorAll('tbody tr').length===5`);
+    await run(`fixture.orders=beforeShrink`);await click('重新整理');await wait(`document.querySelectorAll('tbody tr').length===10`);
     await click('下一頁');await wait(`document.querySelectorAll('tbody tr').length===2`);
     assert.equal(await run(`document.querySelector('[data-syslog="order.delete"]')===null`),true);
     await run(`document.querySelector('[data-syslog="order.detail_open"]').click()`);
     await wait(`document.querySelector('iframe')?.contentDocument?.querySelector('.order-card')`);
     const fr=expr=>run(`(()=>{const w=document.querySelector('iframe').contentWindow,d=w.document;return (${expr});})()`);
+    // 使用真正的滑鼠滾輪，避免 scrollIntoView 可越過 overflow:hidden 而誤判。
+    const wheelDetailToBottom=async()=>{
+      await fr(`(w.scrollTo(0,0),d.body.scrollTo(0,0))`);
+      const before=await run(`({top:document.querySelector('.order-detail-dialog>header').getBoundingClientRect().top,scroll:document.scrollingElement.scrollTop})`);
+      const point=await run(`(()=>{const r=document.querySelector('iframe').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};})()`);
+      await send('Input.dispatchMouseEvent',{type:'mouseWheel',...point,deltaX:0,deltaY:500});
+      await wait(`document.querySelector('iframe').contentDocument.body.scrollTop+document.querySelector('iframe').contentWindow.scrollY>0`);
+      for(let i=0;i<20;i++){
+        if(await fr(`d.querySelector('.order-timeline li:last-child').getBoundingClientRect().bottom<=w.innerHeight`))break;
+        await send('Input.dispatchMouseEvent',{type:'mouseWheel',...point,deltaX:0,deltaY:500});
+        await new Promise(r=>setTimeout(r,60));
+      }
+      assert.equal(await fr(`d.querySelector('.order-timeline li:last-child').getBoundingClientRect().bottom<=w.innerHeight`),true);
+      assert.deepEqual(await run(`({top:document.querySelector('.order-detail-dialog>header').getBoundingClientRect().top,scroll:document.scrollingElement.scrollTop})`),before);
+    };
+    await wheelDetailToBottom();
+    await send('Page.captureScreenshot',{format:'png'}).then(r=>fs.writeFileSync(path.join(temp,'timeline-desktop-wheel.png'),Buffer.from(r.data,'base64')));
+
     assert.equal(await fr(`d.querySelector('.rebook-button').disabled`),true);
+    assert.deepEqual(await fr(`[...d.querySelectorAll('.order-timeline li span')].map(e=>e.textContent)`),['乘客下單','派送司機','司機拒絕','派送司機','行程完成']);
+    assert.equal(await fr(`d.querySelector('.order-timeline time').textContent`),'2026/11/14 11:46:40');
+    assert.equal(await fr(`d.body.innerText.includes('本次搭乘已完成')`),false);
     assert.equal(await fr(`d.querySelector('.rebook-button').textContent`),'重新叫車');
     assert.equal(await fr(`w.getComputedStyle(d.querySelector('.order-card')).borderRightColor`),'rgb(196, 123, 139)');
     assert.equal(await fr(`d.body.innerText.includes('快照司機')&&d.body.innerText.includes('新戶券 · 100 元')`),true);
@@ -147,7 +260,7 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{nam
     assert.equal(await fr(`w.__mapLines.filter(l=>l.map&&l.strokeWeight===4).every(l=>l.path.length===2)`),true);
     await fr(`d.querySelector('dialog [data-close]').click()`);
     await wait(`!document.querySelector('iframe').contentDocument.querySelector('dialog[open]')`);
-    await fr(`(w.scrollTo(0,140),w.savedScroll=w.scrollY,d.querySelector('.chat-entry').click())`);
+    await fr(`(d.body.scrollTo(0,140),w.savedScroll=d.body.scrollTop,d.querySelector('.chat-entry').click())`);
     await wait(`document.querySelector('iframe').contentDocument.querySelectorAll('.chat-bubble').length===51`);
     assert.equal(await fr(`d.querySelector('.chat-composer').hidden`),true);
     assert.equal(await fr(`d.querySelectorAll('.chat-segment').length`),2);
@@ -157,11 +270,13 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{nam
     assert.equal(await fr(`d.querySelector('.chat-bubble a').rel`),'noopener noreferrer');
     await send('Page.captureScreenshot',{format:'png'}).then(r=>fs.writeFileSync(path.join(temp,'detail-chat.png'),Buffer.from(r.data,'base64')));
     await fr(`d.querySelector('.order-chat header button').click()`);
-    assert.equal(await fr(`w.scrollY===w.savedScroll`),true);
+    assert.equal(await fr(`d.body.scrollTop===w.savedScroll`),true);
     await send('Page.captureScreenshot',{format:'png'}).then(r=>fs.writeFileSync(path.join(temp,'detail-card.png'),Buffer.from(r.data,'base64')));
     await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:false});
     await send('Page.captureScreenshot',{format:'png'}).then(r=>fs.writeFileSync(path.join(temp,'detail-390.png'),Buffer.from(r.data,'base64')));
     assert.equal(await fr(`d.documentElement.scrollWidth<=w.innerWidth`),true);
+    await wheelDetailToBottom();
+    await send('Page.captureScreenshot',{format:'png'}).then(r=>fs.writeFileSync(path.join(temp,'timeline-390.png'),Buffer.from(r.data,'base64')));
     await click('關閉');await wait(`!document.querySelector('dialog[open]')`);
     assert.equal(await run(`document.querySelectorAll('tbody tr').length`),2);
     await run(`window.detailDenied=true;document.querySelector('[data-syslog="order.detail_open"]').click()`);
@@ -170,6 +285,15 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{nam
     await run(`window.detailDenied=false`);await fr(`d.querySelector('#detail>button').click()`);
     await wait(`document.querySelector('iframe').contentDocument.querySelector('.order-card')`);
     await click('關閉');await wait(`!document.querySelector('iframe')`);
+    await run(`window.timelineFixture={incomplete:true,events:[{label:'其他訂單事件',occurredAt:null}]};document.querySelector('[data-syslog="order.detail_open"]').click()`);
+    await wait(`document.querySelector('iframe')?.contentDocument?.querySelector('.order-timeline')`);
+    assert.equal(await fr(`d.querySelector('.order-timeline').innerText.includes('歷程資料不完整')&&d.querySelector('.order-timeline').innerText.includes('時間未記錄')`),true);
+    await click('關閉');await wait(`!document.querySelector('iframe')`);
+    await run(`window.timelineFixture={incomplete:true,events:[]};document.querySelector('[data-syslog="order.detail_open"]').click()`);
+    await wait(`document.querySelector('iframe')?.contentDocument?.querySelector('.order-timeline')`);
+    assert.equal(await fr(`d.querySelector('.order-timeline').innerText.includes('尚無可顯示的歷程')`),true);
+    await click('關閉');await wait(`!document.querySelector('iframe')`);
+    console.log('PASS: v5.2 訂單編號／目的地雙向排序、事件順序與重複派送、時間格式、舊資料與空歷程、390px 排版。');
     await run(`window.holdDetail=true;document.querySelector('[data-syslog="order.detail_open"]').click()`);
     await wait(`typeof releaseDetail==='function'`);
     await run(`changeUser('different-admin');releaseDetail()`);

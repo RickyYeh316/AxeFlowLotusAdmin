@@ -1,13 +1,17 @@
 'use client';
 
 import OrderDetail from './OrderDetail';
+import { orderGroup, orderStatusText, orderSubcategory, orderSubcategories, OrderFilter } from '../lib/orderPresentation';
+import { recordSystemLog } from '../lib/systemLogs/client';
 import { passengerNumber } from '../lib/passengerNumber';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { db } from '../firebase/config';
+import { auth, db } from '../firebase/config';
+import { onAuthStateChanged } from 'firebase/auth';
+import { adminApi } from '../lib/adminApi';
 import { collection, onSnapshot } from '../lib/loggedFirestore';
-import { Search, ChevronUp, ChevronDown } from 'lucide-react';
-import { Order, User, OrderStatus, UserTripStatus, UserAccountStatus } from '../types';
+import { Search, ChevronUp, ChevronDown, RefreshCw } from 'lucide-react';
+import { Order, User, UserTripStatus, UserAccountStatus } from '../types';
 
 function mapUrl(location: Order['destination']): string | null {
   if (!location || typeof location.lat !== 'number' || typeof location.lng !== 'number' ||
@@ -33,8 +37,12 @@ export default function OrderManager() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<OrderFilter>('serving');
+  const [subcategory, setSubcategory] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [driverReadFailures, setDriverReadFailures] = useState<Set<string>>(new Set());
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Sorting State
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'ascending' | 'descending' } | null>({
@@ -49,12 +57,33 @@ export default function OrderManager() {
   // Reset page when filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [statusFilter]);
+  }, [statusFilter, subcategory]);
 
   // Load orders and passenger numbers
   useEffect(() => {
+    let active = true;
+    const owner = auth.currentUser?.uid;
+    let revision = 0;
+    let hydration = Promise.resolve();
+    const driverCache = new Map<string, { name: string; carPlate: string }>();
+    const sameOwner = () => active && auth.currentUser?.uid === owner;
+    const stopAuth = onAuthStateChanged(auth, user => {
+      if (active && user?.uid !== owner) {
+        active = false;
+        driverCache.clear();
+        setOrders([]);
+        setUsers([]);
+        setDriverReadFailures(new Set());
+        setLoading(false);
+        setLoadError('登入身分已變更，請重新開啟頁面。');
+      }
+    });
+    setDriverReadFailures(new Set());
+    setLoading(true);
+    setLoadError('');
     // 1. Subscribe to orders
     const unsubOrders = onSnapshot(collection(db, 'orders'), (snapshot) => {
+      if (!active) return;
       const list: Order[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
@@ -76,21 +105,63 @@ export default function OrderManager() {
           isElderlyCare: data.isElderlyCare || false,
           isScheduled: data.isScheduled || false,
           scheduledTime: data.scheduledTime,
-          status: data.status || OrderStatus.PENDING,
+          reservationState: typeof data.reservationState === 'string' ? data.reservationState : '',
+          status: data.status ?? '',
           fare: data.fare,
           createdAt: data.createdAt,
           updatedAt: data.updatedAt
         });
       });
-      setOrders(list);
-      setLoading(false);
+      const version = ++revision;
+      const current = () => sameOwner() && version === revision;
+      setLoading(true);
+      // 完單原欄位已釋放，沿詳情 API 讀同一份歷史快照。最多同時四筆，既有快照依版本快取。
+      hydration = hydration.then(async () => {
+        if (!current()) return;
+        const completed = list.filter(order => String(order.status) === 'COMPLETED');
+        const failures = new Set<string>();
+        let cursor = 0;
+        await Promise.all(Array.from({ length: Math.min(4, completed.length) }, async () => {
+          while (current() && cursor < completed.length) {
+            const order = completed[cursor++];
+            const key = JSON.stringify([order.id, order.userId, order.updatedAt?.seconds,
+              order.updatedAt?.nanoseconds, order.updatedAt?.toDate?.().getTime()]);
+            try {
+              let driver = driverCache.get(key);
+              if (!driver) {
+                const result = await adminApi<{ card: { orderId: string; orderStatus: string; driver?: { name?: string; carPlate?: string } | null } }>(
+                  { action: 'ORDER_DETAIL', orderId: order.id });
+                if (!sameOwner()) return;
+                if (result.card.orderId !== order.id || result.card.orderStatus !== 'COMPLETED') throw new Error('歷史訂單資料已變更');
+                driver = { name: typeof result.card.driver?.name === 'string' ? result.card.driver.name : '',
+                  carPlate: typeof result.card.driver?.carPlate === 'string' ? result.card.driver.carPlate : '' };
+                driverCache.set(key, driver);
+              }
+              order.driverName = driver.name;
+              order.carPlate = driver.carPlate;
+            } catch {
+              failures.add(order.id);
+              order.driverName = '';
+              order.carPlate = '';
+            }
+          }
+        }));
+        if (!current()) return;
+        setDriverReadFailures(failures);
+        setOrders(list);
+        setLoading(false);
+      });
     }, (error) => {
+      if (!active) return;
+      revision++;
+      setLoadError('訂單讀取失敗，請重新整理。');
       console.error("Error subscribing to orders:", error);
       setLoading(false);
     });
 
     // 2. Subscribe to users for passenger numbers
     const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+      if (!active) return;
       const list: User[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
@@ -129,51 +200,13 @@ export default function OrderManager() {
     });
 
     return () => {
+      active = false;
+      stopAuth();
+      driverCache.clear();
       unsubOrders();
       unsubUsers();
     };
-  }, []);
-
-  const getOrderStatusText = (status: any) => {
-    const statusStr = String(status);
-    switch (statusStr) {
-      case '1': return '已派遣/進行中';
-      case '2': return '已完成';
-      case '0': return '已取消';
-      case 'SCHEDULED': return '預約中';
-      case OrderStatus.PENDING: return '等待派車';
-      case OrderStatus.MATCHING: return '媒合中';
-      case OrderStatus.ACCEPTED: return '前往上車地點';
-      case OrderStatus.ARRIVED: return '已抵達';
-      case OrderStatus.IN_PROGRESS: return '載客中';
-      case OrderStatus.COMPLETED: return '已完成';
-      case OrderStatus.CANCELLED_BY_USER: return '乘客已取消';
-      case OrderStatus.DRIVER_CANCELLED: return '已中止服務';
-      case OrderStatus.NO_SHOW: return '已回報乘客未出現';
-      case OrderStatus.FAILED_MATCH: return '媒合失敗';
-      default: return '訂單狀態待確認';
-    }
-  };
-
-  const getOrderStatusClass = (status: any) => {
-    const statusStr = String(status);
-    switch (statusStr) {
-      case '1':
-      case 'SCHEDULED':
-      case OrderStatus.PENDING:
-      case OrderStatus.MATCHING:
-        return 'status-pill online';
-      case OrderStatus.ACCEPTED:
-      case OrderStatus.ARRIVED:
-      case OrderStatus.IN_PROGRESS:
-        return 'status-pill busy';
-      case '2':
-      case OrderStatus.COMPLETED:
-        return 'status-pill online';
-      default:
-        return 'status-pill offline';
-    }
-  };
+  }, [reloadKey]);
 
   const formatDate = (timestamp: Order['updatedAt']) => {
     if (!timestamp?.toDate) return '時間未提供';
@@ -184,36 +217,26 @@ export default function OrderManager() {
 
   // Filtering States
   const [searchQuery, setSearchQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState<string>('ALL');
 
   const passengerNumbers = useMemo(() => new Map(users.map(user => [user.userId, passengerNumber(user.passengerNumber)])), [users]);
+
+  const groupCounts = useMemo(() => ({
+    serving: orders.filter(order => orderGroup(order) === 'serving').length,
+    waiting: orders.filter(order => orderGroup(order) === 'waiting').length,
+    closed: orders.filter(order => orderGroup(order) === 'closed').length,
+    all: orders.length,
+  }), [orders]);
+
+  const subcategoryOptions = useMemo(() => orderSubcategories
+    .filter(option => statusFilter === 'all' || option.group === statusFilter)
+    .map(option => ({ ...option, count: orders.filter(order => orderSubcategory(order) === option.value).length })),
+    [orders, statusFilter]);
 
   // Filter orders
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
       // 1. Status filter
-      let matchesStatus = true;
-      const statusStr = String(order.status);
-      
-      if (statusFilter === 'active') {
-        matchesStatus = 
-          (order.status as any) === 1 || 
-          statusStr === 'SCHEDULED' ||
-          statusStr === 'PENDING' || 
-          statusStr === 'MATCHING' || 
-          statusStr === 'ACCEPTED' || 
-          statusStr === 'ARRIVED' || 
-          statusStr === 'IN_PROGRESS';
-      } else if (statusFilter === 'completed') {
-        matchesStatus = (order.status as any) === 2 || statusStr === 'COMPLETED';
-      } else if (statusFilter === 'closed') {
-        matchesStatus = 
-          (order.status as any) === 0 || 
-          statusStr === 'CANCELLED_BY_USER' || 
-          statusStr === 'DRIVER_CANCELLED' || 
-          statusStr === 'NO_SHOW' || 
-          statusStr === 'FAILED_MATCH';
-      }
+      const matchesStatus = statusFilter === 'all' || orderGroup(order) === statusFilter;
 
       // 2. Search query filter
       let matchesSearch = true;
@@ -225,28 +248,16 @@ export default function OrderManager() {
           order.id.toLowerCase().includes(searchLower) ||
           (order.readableId || '').toLowerCase().includes(searchLower.replace(/^#/, '')) ||
           (order.passengerName || '').toLowerCase().includes(searchLower) ||
-          passengerNumbers.get(order.passengerId || order.userId) === searchLower ||
+          (passengerNumbers.get(order.passengerId || order.userId) || '').includes(searchLower) ||
           (order.driverName || '').toLowerCase().includes(searchLower) ||
           (order.carPlate || '').toLowerCase().includes(searchLower) ||
           startAddr.toLowerCase().includes(searchLower) ||
           endAddr.toLowerCase().includes(searchLower);
       }
 
-      // 3. Order type filter
-      let matchesType = true;
-      if (typeFilter !== 'ALL') {
-        if (typeFilter === 'ELDERLY') {
-          matchesType = order.isElderlyCare === true;
-        } else if (typeFilter === 'SCHEDULED') {
-          matchesType = order.isScheduled === true;
-        } else if (typeFilter === 'REGULAR') {
-          matchesType = !order.isElderlyCare && !order.isScheduled;
-        }
-      }
-
-      return matchesStatus && matchesSearch && matchesType;
+      return matchesStatus && (subcategory === 'all' || orderSubcategory(order) === subcategory) && matchesSearch;
     });
-  }, [orders, statusFilter, searchQuery, typeFilter, passengerNumbers]);
+  }, [orders, statusFilter, subcategory, searchQuery, passengerNumbers]);
 
   // Sorting & Pagination Logic
   const requestSort = (key: string) => {
@@ -274,6 +285,11 @@ export default function OrderManager() {
         let aVal = a[sortConfig.key];
         let bVal = b[sortConfig.key];
 
+        if (sortConfig.key === 'readableId' || sortConfig.key === 'endAddress') {
+          const result = String(aVal ?? '').localeCompare(String(bVal ?? ''), 'zh-Hant', { numeric: true });
+          return sortConfig.direction === 'ascending' ? result : -result;
+        }
+
         if (sortConfig.key === 'createdAt' || sortConfig.key === 'updatedAt') {
           aVal = aVal?.toDate ? aVal.toDate().getTime() : new Date(aVal || 0).getTime();
           bVal = bVal?.toDate ? bVal.toDate().getTime() : new Date(bVal || 0).getTime();
@@ -294,6 +310,9 @@ export default function OrderManager() {
   }, [filteredOrders, sortConfig]);
 
   const totalPages = Math.ceil(sortedOrders.length / itemsPerPage);
+  useEffect(() => {
+    setCurrentPage(page => Math.min(page, Math.max(1, totalPages)));
+  }, [totalPages]);
   const paginatedOrders = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
     return sortedOrders.slice(start, start + itemsPerPage);
@@ -341,13 +360,29 @@ export default function OrderManager() {
     <>
       <div className="glass content-sheet animate-fade-in">
       <div className="sheet-title-row">
-        <div>
+        <div className="order-title-content">
           <h2 className="sheet-title">訂單管理 ({filteredOrders.length})</h2>
-          <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-            <button data-syslog="order.filter.all" onClick={() => setStatusFilter('all')} className={`category-pill ${statusFilter === 'all' ? 'active' : ''}`}>全部訂單</button>
-            <button data-syslog="order.filter.active" onClick={() => setStatusFilter('active')} className={`category-pill ${statusFilter === 'active' ? 'active' : ''}`}>進行中</button>
-            <button data-syslog="order.filter.completed" onClick={() => setStatusFilter('completed')} className={`category-pill ${statusFilter === 'completed' ? 'active' : ''}`}>已完成</button>
-            <button data-syslog="order.filter.closed" onClick={() => setStatusFilter('closed')} className={`category-pill ${statusFilter === 'closed' ? 'active' : ''}`}>取消／未完成</button>
+          <div className="order-status-toolbar">
+            {([['serving', '服務中'], ['waiting', '待處理'], ['closed', '已結束'], ['all', '全部']] as const).map(([value, label]) => (
+              <div key={value} className={`order-filter-group order-tone-${value}`}>
+              <button type="button" data-syslog={`order.filter.${value}`} aria-pressed={statusFilter === value}
+                onClick={() => { setStatusFilter(value); if (statusFilter !== value) setSubcategory('all'); }} className={`category-pill order-filter order-tone-${value} ${statusFilter === value ? 'active' : ''}`}>
+                {label}{!loading && !loadError && ` (${groupCounts[value]})`}
+              </button>
+              {statusFilter === value && <select className="order-subcategory" aria-label={`${label}子類`}
+                value={subcategory} onChange={event => {
+                  setSubcategory(event.target.value);
+                  recordSystemLog('UI_CLICK', { control: 'order.subcategory', action: event.target.value });
+                }}>
+                <option value="all">全部狀態</option>
+                {subcategoryOptions.map(option => <option key={option.value} value={option.value}>
+                  {option.label}{!loading && !loadError && ` (${option.count})`}
+                </option>)}
+              </select>}
+              </div>
+            ))}
+            <button type="button" className="btn-secondary" data-syslog="order.refresh" disabled={loading}
+              onClick={() => setReloadKey(key => key + 1)}><RefreshCw size={14} />重新整理</button>
           </div>
         </div>
 
@@ -363,49 +398,28 @@ export default function OrderManager() {
             type="text" 
             value={searchQuery}
             onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-            placeholder="搜尋乘客姓名／編號、車牌／司機、地址、訂單編號"
+            placeholder="搜尋訂單編號、乘客姓名、乘客編號、車牌、司機姓名、上車地／目的地"
             className="search-input"
           />
         </div>
 
-        {/* Order Type Filter */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-          <span>乘車類型：</span>
-          <select 
-            value={typeFilter}
-            onChange={(e) => { setTypeFilter(e.target.value); setCurrentPage(1); }}
-            style={{
-              background: 'rgba(255, 255, 255, 0.03)',
-              border: '1px solid var(--border-color)',
-              borderRadius: 6,
-              padding: '6px 12px',
-              color: 'var(--text-primary)',
-              fontSize: '0.8rem',
-              outline: 'none',
-              cursor: 'pointer'
-            }}
-          >
-            <option value="ALL" style={{ background: '#0c0d14' }}>全部類型</option>
-            <option value="REGULAR" style={{ background: '#0c0d14' }}>一般叫車</option>
-            <option value="ELDERLY" style={{ background: '#0c0d14' }}>敬老服務</option>
-            <option value="SCHEDULED" style={{ background: '#0c0d14' }}>預約叫車</option>
-          </select>
-        </div>
       </div>
 
+      {driverReadFailures.size > 0 && <p role="alert" className="coupon-error">部分司機資料讀取失敗，車牌／司機搜尋結果尚未完整，請重新整理。</p>}
+      {loadError && <p role="alert" className="coupon-error">{loadError}</p>}
       {loading ? (
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>載入訂單資料中...</div>
       ) : filteredOrders.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>無任何訂單紀錄。</div>
+        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>目前沒有符合條件的訂單。</div>
       ) : (
         <div className="admin-table-container">
           <table className="admin-table order-table">
             <colgroup><col style={{ width: '15%' }} /><col style={{ width: '28%' }} /><col style={{ width: '32%' }} /><col style={{ width: '17%' }} /><col style={{ width: '8%' }} /></colgroup>
             <thead>
               <tr>
-                <th><button className="coupon-sort" onClick={() => requestSort('status')}>狀態 {getSortIcon('status')}</button><br />訂單編號</th>
+                <th><button className="coupon-sort" onClick={() => requestSort('status')}>狀態 {getSortIcon('status')}</button><br /><button className="coupon-sort" data-syslog="order.sort.number" onClick={() => requestSort('readableId')}>訂單編號 {getSortIcon('readableId')}</button></th>
                 <th><button className="coupon-sort" onClick={() => requestSort('passengerName')}>乘客姓名／編號 {getSortIcon('passengerName')}</button><br /><button className="coupon-sort" onClick={() => requestSort('driverName')}>車號司機 {getSortIcon('driverName')}</button></th>
-                <th><button className="coupon-sort" onClick={() => requestSort('startAddress')}>上車地 {getSortIcon('startAddress')}</button><br />目的地</th>
+                <th><button className="coupon-sort" onClick={() => requestSort('startAddress')}>上車地 {getSortIcon('startAddress')}</button><br /><button className="coupon-sort" data-syslog="order.sort.destination" onClick={() => requestSort('endAddress')}>目的地 {getSortIcon('endAddress')}</button></th>
                 <th><button className="coupon-sort" onClick={() => requestSort('updatedAt')}>紀錄時間 {getSortIcon('updatedAt')}</button></th>
                 <th>操作</th>
               </tr>
@@ -415,14 +429,14 @@ export default function OrderManager() {
                 <tr data-log-order={order.id} key={order.id}>
                   <td>
                     <div className="order-cell-stack">
-                      <span className={getOrderStatusClass(order.status)}>{getOrderStatusText(order.status)}</span>
+                      <span className={`status-pill order-status order-tone-${orderGroup(order)}`}>{orderStatusText(order)}</span>
                       <span className="order-number">{order.readableId ? `#${order.readableId}` : '編號待產生'}</span>
                     </div>
                   </td>
                   <td>
                     <div className="order-cell-stack">
                       <div className="order-passenger"><strong>{order.passengerName || '未提供'}</strong><span className="order-passenger-number">{passengerNumbers.get(order.passengerId || order.userId) || '—'}</span></div>
-                      <div className="order-driver">{order.carPlate && <span className="order-plate">{order.carPlate}</span>}<span>{order.driverName || (['PENDING', 'MATCHING', 'SCHEDULED'].includes(String(order.status)) ? '尚未指派' : '未提供')}</span></div>
+                      <div className="order-driver">{order.carPlate && <span className="order-plate">{order.carPlate}</span>}<span>{order.driverName || (driverReadFailures.has(order.id) ? '司機資料讀取失敗' : ['PENDING', 'MATCHING', 'SCHEDULED'].includes(String(order.status)) ? '尚未指派' : '未提供')}</span></div>
                     </div>
                   </td>
                   <td>

@@ -1,1 +1,10 @@
 html,body{min-height:100%;background:#10151e}body.line-passenger{margin:0;padding:12px;user-select:text}#detail{max-width:540px;margin:0 auto}.order-card{margin:0}.line-passenger button{min-height:44px}.order-chat{z-index:10}.order-map-dialog{margin:0;inset:0}.order-map-dialog header{background:#222e3e}.read-error{color:#f0adb5}#detail>button{margin-top:12px}
+
+/* 管理詳情沒有乘客端的分頁捲動容器，由 iframe 的 body 承接整張卡片。 */
+body.line-passenger{overflow-x:hidden;overflow-y:scroll;overscroll-behavior-y:contain;scrollbar-gutter:stable;scrollbar-color:#8396ad #182332}
+body.line-passenger::-webkit-scrollbar{width:12px}
+body.line-passenger::-webkit-scrollbar-track{background:#182332}
+body.line-passenger::-webkit-scrollbar-thumb{background:#8396ad;border:3px solid #182332;border-radius:8px}
+body.line-passenger.chat-open{overflow:hidden}
+
+.order-timeline{border-top:1px solid #46566c;margin-top:20px;padding-top:16px}.order-timeline h4{margin:0 0 14px;font-size:1rem}.order-timeline ol{list-style:none;padding:0;margin:0}.order-timeline li{position:relative;border-left:2px solid #46566c;margin-left:5px;padding:0 0 18px 18px;overflow-wrap:anywhere}.order-timeline li::before{content:"";position:absolute;width:8px;height:8px;background:#94c5ff;border-radius:50%;left:-5px;top:7px}.order-timeline li:last-child{padding-bottom:0}.order-timeline time{display:block;font-size:.85em;color:#adbdcf;margin-bottom:4px}.order-timeline li span{display:block;color:#e1e7ef}

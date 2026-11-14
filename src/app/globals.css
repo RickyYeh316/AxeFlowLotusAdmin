@@ -1093,7 +1093,7 @@ body.modal-open .workspace-tabs-bar {
 }
 
 /* 訂單列表：沿 AOS 的欄位名稱與兩行資訊順序。 */
-.order-search { width: min(100%, 520px); }
+.order-search { width: min(100%, 760px); }
 .order-table { min-width: 1060px; table-layout: fixed; }
 .order-table th, .order-table td { padding: 18px 16px; overflow-wrap: anywhere; }
 .order-table th { line-height: 1.9; }
@@ -1128,3 +1128,24 @@ body.modal-open .workspace-tabs-bar {
 .order-detail-dialog h2 {font-size:1rem;margin:0}
 .order-detail-dialog iframe {width:100%;flex:1;min-height:0;border:0;background:#10151e}
 @media(max-width:600px) {.order-detail-dialog{width:100vw;height:100dvh;border-radius:0}}
+
+/* 訂單分類與卡片框色一致；只限訂單列表，保持結帳頁與其他頁原樣。 */
+.order-status-toolbar {display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center}
+.order-tone-serving {--order-tone:#66b292;--order-tint:#66b29218}
+.order-tone-waiting {--order-tone:#d6b35c;--order-tint:#d6b35c18}
+.order-tone-closed {--order-tone:#c47b8b;--order-tint:#c47b8b18}
+.order-tone-all,.order-tone-unknown {--order-tone:#8193ab;--order-tint:#8193ab18}
+.order-filter.category-pill {color:var(--order-tone);border-color:var(--order-tone);background:transparent;box-shadow:none}
+.order-filter.category-pill:hover {background:var(--order-tint)}
+.order-filter.category-pill.active {color:#10151e;background:var(--order-tone);border-color:var(--order-tone);box-shadow:none}
+.order-table .order-status {color:var(--order-tone);border:1px solid var(--order-tone);background:var(--order-tint);line-height:1.6;white-space:normal}
+
+.order-status-toolbar > .btn-secondary {display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+
+.order-filter-group {display:inline-flex;align-items:center;gap:8px;max-width:100%;min-width:0}
+.order-filter-group > .order-filter {flex-shrink:0;white-space:nowrap}
+.order-subcategory {min-width:0;width:270px;max-width:100%;padding:10px 12px;border:1px solid var(--order-tone);border-radius:8px;background:#10151e;color:var(--order-tone);font:inherit;font-size:.85rem;cursor:pointer}
+.order-subcategory:focus-visible {outline:2px solid var(--order-tone);outline-offset:2px}
+.order-subcategory option {background:#10151e;color:#e5eaf1}
+
+.order-title-content {width:100%;min-width:0}

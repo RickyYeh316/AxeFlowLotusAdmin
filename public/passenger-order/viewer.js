@@ -57,12 +57,26 @@
     async function load(){
       root.replaceChildren(Object.assign(document.createElement('p'),{textContent:'載入訂單中…'}));
       try{
-        const {card}=await request({action:'ORDER_DETAIL'});
+        const {card,history}=await request({action:'ORDER_DETAIL'});
         const historical=card.active===false;
         const article=renderer.card(card,'USER',historical);
         // 紀錄頁沿用再次叫車的顯示條件；管理端永遠停用。
         const again=article.querySelector('.rebook-button');if(again)again.textContent='重新叫車';
-        const time=document.createElement('p');time.className='note';time.textContent='紀錄時間：'+renderer.taiwanTime(card.updatedAt);article.append(time);
+        // 只替換卡片最後的乘客口吻摘要，保留優惠券等其他 outcome 說明。
+        const outcome=article.lastElementChild;
+        if(outcome?.classList.contains('outcome')&&card.orderStatus!=='SCHEDULED')outcome.remove();
+        const timeline=document.createElement('section');timeline.className='order-timeline';
+        const title=document.createElement('h4');title.textContent='訂單歷程';timeline.append(title);
+        if(!history||history.incomplete){const note=document.createElement('p');note.className='note';note.textContent='歷程資料不完整，以下顯示已保存的紀錄。';timeline.append(note);}
+        const list=document.createElement('ol');
+        for(const event of history?.events||[]){
+          const row=document.createElement('li'),time=document.createElement('time'),label=document.createElement('span');
+          time.textContent=event.occurredAt?renderer.taiwanTime(event.occurredAt):'時間未記錄';
+          label.textContent=event.label;row.append(time,label);list.append(row);
+        }
+        timeline.append(list);
+        if(!history?.events?.length){const empty=document.createElement('p');empty.className='note';empty.textContent='尚無可顯示的歷程。';timeline.append(empty);}
+        article.append(timeline);
         root.replaceChildren(article);
         send({type:'loaded'});
       }catch(e){

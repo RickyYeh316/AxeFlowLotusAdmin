@@ -3,6 +3,7 @@ import { Timestamp } from 'firebase/firestore';
 export type VehicleType = 'standard' | 'suv' | 'luxury';
 
 export enum OrderStatus {
+  SCHEDULED = "SCHEDULED", // 預約池／尚未正式履約
   PENDING = "PENDING", // 用戶送出叫車 (即時/預約)
   MATCHING = "MATCHING", // 系統開始派車
   ACCEPTED = "ACCEPTED", // 司機接單
@@ -119,6 +120,7 @@ export interface Order {
   isElderlyCare: boolean;
   isScheduled: boolean;
   scheduledTime?: Timestamp;
+  reservationState?: string;
   couponId?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
