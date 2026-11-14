@@ -47,6 +47,6 @@ export default function OrderDetail({orderId, onClose}: {orderId: string; onClos
   }, [orderId]);
   return <dialog className="order-detail-dialog" ref={dialog} aria-labelledby="order-detail-title" onCancel={event => {event.preventDefault(); onClose();}}>
     <header><h2 id="order-detail-title">訂單詳細</h2><button type="button" autoFocus className="btn-secondary" aria-label="關閉訂單詳細" data-syslog="order.detail_close" onClick={onClose}>關閉</button></header>
-    <iframe ref={frame} title="訂單卡片、行程地圖與對話" src="/passenger-order/index.html" />
+    <iframe ref={frame} title="訂單卡片、行程地圖與對話" src="/passenger-order/index.html?v=20261114-plate-2" />
   </dialog>;
 }

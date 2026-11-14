@@ -247,8 +247,10 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{nam
     await send('Page.captureScreenshot',{format:'png'}).then(r=>fs.writeFileSync(path.join(temp,'timeline-desktop-wheel.png'),Buffer.from(r.data,'base64')));
 
     assert.equal(await fr(`d.querySelector('.rebook-button').disabled`),true);
-    assert.deepEqual(await fr(`[...d.querySelectorAll('.order-timeline li span')].map(e=>e.textContent)`),['乘客下單','派送司機','司機拒絕','派送司機','行程完成']);
+    assert.deepEqual(await fr(`[...d.querySelectorAll('.order-timeline li>span')].map(e=>e.textContent)`),['乘客下單','派送司機　AAA-1111','司機拒絕　AAA-1111','派送司機　BBB-2222','行程完成']);
     assert.equal(await fr(`d.querySelector('.order-timeline time').textContent`),'2026/11/14 11:46:40');
+    assert.deepEqual(await fr(`(()=>{const p=d.querySelector('.order-timeline .taxi-plate'),s=w.getComputedStyle(p);return {color:s.color,background:s.backgroundColor,display:s.display,compact:p.getBoundingClientRect().width<p.parentElement.getBoundingClientRect().width/2};})()`),{color:'rgb(181, 31, 50)',background:'rgb(255, 255, 255)',display:'inline-block',compact:true});
+
     assert.equal(await fr(`d.body.innerText.includes('本次搭乘已完成')`),false);
     assert.equal(await fr(`d.querySelector('.rebook-button').textContent`),'重新叫車');
     assert.equal(await fr(`w.getComputedStyle(d.querySelector('.order-card')).borderRightColor`),'rgb(196, 123, 139)');

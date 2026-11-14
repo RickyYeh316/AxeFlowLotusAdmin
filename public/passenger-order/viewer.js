@@ -72,7 +72,10 @@
         for(const event of history?.events||[]){
           const row=document.createElement('li'),time=document.createElement('time'),label=document.createElement('span');
           time.textContent=event.occurredAt?renderer.taiwanTime(event.occurredAt):'時間未記錄';
-          label.textContent=event.label;row.append(time,label);list.append(row);
+          const carPlate=typeof event.carPlate==='string'?event.carPlate.trim():'';
+          label.textContent=event.label;
+          if(carPlate){const plate=document.createElement('span');plate.className='taxi-plate';plate.textContent=carPlate;label.append('　',plate);}
+          row.append(time,label);list.append(row);
         }
         timeline.append(list);
         if(!history?.events?.length){const empty=document.createElement('p');empty.className='note';empty.textContent='尚無可顯示的歷程。';timeline.append(empty);}
