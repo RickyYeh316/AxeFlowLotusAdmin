@@ -1,23 +1,44 @@
 'use client';
 
+import OrderDetail from './OrderDetail';
 import { passengerNumber } from '../lib/passengerNumber';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase/config';
-import { collection, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, Timestamp } from '../lib/loggedFirestore';
-import { Plus, X, Check, Compass, AlertCircle, ShoppingBag, MapPin, Search, ChevronUp, ChevronDown, Trash2, Calendar } from 'lucide-react';
-import { Order, Driver, User, OrderStatus, DriverTripStatus, DriverAccountStatus, UserTripStatus, UserAccountStatus } from '../types';
+import { collection, onSnapshot } from '../lib/loggedFirestore';
+import { Search, ChevronUp, ChevronDown } from 'lucide-react';
+import { Order, User, OrderStatus, UserTripStatus, UserAccountStatus } from '../types';
+
+function mapUrl(location: Order['destination']): string | null {
+  if (!location || typeof location.lat !== 'number' || typeof location.lng !== 'number' ||
+      !Number.isFinite(location.lat) || !Number.isFinite(location.lng) ||
+      Math.abs(location.lat) > 90 || Math.abs(location.lng) > 180) return null;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${location.lat},${location.lng}`)}`;
+}
+
+function OrderAddress({ location, address, pickup }: { location: Order['destination']; address?: string; pickup: boolean }) {
+  const href = mapUrl(location);
+  return <div className="order-address">
+    <span className="order-location-dot" aria-hidden="true">{pickup ? '●' : '▼'}</span>
+    <span className="order-address-content">
+      {address || <span className="order-address-empty">{pickup ? '上車資訊未提供' : '未輸入'}</span>}
+      {href && <a className="order-map-link" href={href} target="_blank" rel="noopener noreferrer"
+        data-syslog={pickup ? 'order.pickup_map' : 'order.destination_map'}
+        aria-label={pickup ? '查看上車地地圖（另開分頁）' : '查看目的地地圖（另開分頁）'}>地圖</a>}
+    </span>
+  </div>;
+}
 
 export default function OrderManager() {
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
-  const [drivers, setDrivers] = useState<Driver[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [loading, setLoading] = useState(true);
 
   // Sorting State
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'ascending' | 'descending' } | null>({
-    key: 'createdAt',
+    key: 'updatedAt',
     direction: 'descending'
   });
 
@@ -30,29 +51,7 @@ export default function OrderManager() {
     setCurrentPage(1);
   }, [statusFilter]);
 
-  // Form states for Dispatch
-  const [showDispatchModal, setShowDispatchModal] = useState(false);
-
-  useEffect(() => {
-    if (showDispatchModal) {
-      document.body.classList.add('modal-open');
-    } else {
-      document.body.classList.remove('modal-open');
-    }
-    return () => {
-      document.body.classList.remove('modal-open');
-    };
-  }, [showDispatchModal]);
-
-  const [error, setError] = useState<string | null>(null);
-  const [selectedUserId, setSelectedUserId] = useState('');
-  const [manualPassengerName, setManualPassengerName] = useState('');
-  const [selectedDriverEmail, setSelectedDriverEmail] = useState('');
-  const [startAddress, setStartAddress] = useState('台北車站');
-  const [endAddress, setEndAddress] = useState('台北 101');
-  const [customFare, setCustomFare] = useState('200');
-
-  // Load orders, drivers, and users
+  // Load orders and passenger numbers
   useEffect(() => {
     // 1. Subscribe to orders
     const unsubOrders = onSnapshot(collection(db, 'orders'), (snapshot) => {
@@ -61,16 +60,17 @@ export default function OrderManager() {
         const data = doc.data();
         list.push({
           id: doc.id,
-          readableId: data.readableId || doc.id.slice(0, 8),
+          readableId: data.readableId || '',
           userId: data.userId || data.passengerId || 'guest',
           passengerId: data.passengerId || data.userId || 'guest',
           passengerName: data.passengerName || '訪客',
           passengerAvatar: data.passengerAvatar || '',
           driverId: data.driverId || '',
-          driverName: data.driverName || '未指派',
+          driverName: data.driverName || '',
           carPlate: data.carPlate || '',
-          pickupLocation: data.pickupLocation || { lat: 0, lng: 0, address: data.startAddress || '' },
-          destination: data.destination || { lat: 0, lng: 0, address: data.endAddress || '' },
+          pickupLocation: data.pickupLocation || { lat: Number.NaN, lng: Number.NaN },
+          destination: data.destination,
+          couponId: typeof data.couponId === 'string' ? data.couponId : '',
           startAddress: data.startAddress || data.pickupLocation?.address || '',
           endAddress: data.endAddress || data.destination?.address || '',
           isElderlyCare: data.isElderlyCare || false,
@@ -82,12 +82,6 @@ export default function OrderManager() {
           updatedAt: data.updatedAt
         });
       });
-      // Sort orders by date descending
-      list.sort((a, b) => {
-        const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date((a.createdAt as any) || 0).getTime();
-        const timeB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date((b.createdAt as any) || 0).getTime();
-        return timeB - timeA;
-      });
       setOrders(list);
       setLoading(false);
     }, (error) => {
@@ -95,54 +89,7 @@ export default function OrderManager() {
       setLoading(false);
     });
 
-    // 2. Subscribe to drivers (to select online ones)
-    const unsubDrivers = onSnapshot(collection(db, 'drivers'), (snapshot) => {
-      const list: Driver[] = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-
-        // 1. Parsing Trip Status with migration fallbacks
-        let parsedTripStatus = data.tripStatus || data.status || DriverTripStatus.OFFLINE;
-        if (parsedTripStatus === 0 || parsedTripStatus === '0') parsedTripStatus = DriverTripStatus.OFFLINE;
-        else if (parsedTripStatus === 1 || parsedTripStatus === '1') parsedTripStatus = DriverTripStatus.IDLE;
-        else if (parsedTripStatus === 2 || parsedTripStatus === '2') parsedTripStatus = DriverTripStatus.IN_SERVICE;
-        else if (parsedTripStatus === 'SUSPENDED' || parsedTripStatus === 'WAIT_APPROVAL') parsedTripStatus = DriverTripStatus.OFFLINE;
-
-        // 2. Parsing Account Status with migration fallbacks
-        let parsedAccountStatus = data.accountStatus;
-        if (!parsedAccountStatus) {
-          if (data.status === 'WAIT_APPROVAL') {
-            parsedAccountStatus = DriverAccountStatus.PENDING;
-          } else if (data.status === 'SUSPENDED') {
-            parsedAccountStatus = DriverAccountStatus.SUSPENDED;
-          } else {
-            parsedAccountStatus = DriverAccountStatus.ACTIVE;
-          }
-        }
-
-        list.push({
-          email: doc.id,
-          id: doc.id,
-          name: data.name || '',
-          phone: data.phone || '',
-          plateNumber: data.plateNumber || data.carPlate || '',
-          carPlate: data.carPlate || data.plateNumber || '',
-          carColor: data.carColor || '',
-          carMaker: data.carMaker || '',
-          carModel: data.carModel || '',
-          avatar: data.avatar || '',
-          tripStatus: parsedTripStatus as DriverTripStatus,
-          accountStatus: parsedAccountStatus as DriverAccountStatus,
-          working: parsedTripStatus === DriverTripStatus.IDLE,
-          isWorking: parsedTripStatus === DriverTripStatus.IN_SERVICE,
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt
-        });
-      });
-      setDrivers(list);
-    });
-
-    // 3. Subscribe to users (to select passenger)
+    // 2. Subscribe to users for passenger numbers
     const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
       const list: User[] = [];
       snapshot.forEach((doc) => {
@@ -183,178 +130,9 @@ export default function OrderManager() {
 
     return () => {
       unsubOrders();
-      unsubDrivers();
       unsubUsers();
     };
   }, []);
-
-  // Filter online drivers
-  const onlineDrivers = drivers.filter(d => d.accountStatus === DriverAccountStatus.ACTIVE && (d.tripStatus === DriverTripStatus.IDLE || d.tripStatus === DriverTripStatus.IN_QUEUE));
-
-  // Form check fields
-  const [isElderlyCare, setIsElderlyCare] = useState(false);
-  const [isScheduled, setIsScheduled] = useState(false);
-  const [scheduledTime, setScheduledTime] = useState('');
-
-  const handleOpenDispatch = () => {
-    setSelectedUserId(users[0]?.userId || 'guest');
-    setManualPassengerName('');
-    setSelectedDriverEmail(onlineDrivers[0]?.email || '');
-    setStartAddress('台北車站');
-    setEndAddress('台北 101');
-    setCustomFare('250');
-    setIsElderlyCare(false);
-    setIsScheduled(false);
-    setScheduledTime('');
-    setError(null);
-    setShowDispatchModal(true);
-  };
-
-  const handleDispatchSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    // Validate
-    if (!selectedDriverEmail) {
-      setError('請選擇上線服務中的司機！如果沒有司機上線，請先在「司機管理」中將某個司機狀態改為空車。');
-      return;
-    }
-    if (selectedUserId === 'manual' && !manualPassengerName.trim()) {
-      setError('請輸入乘客姓名！');
-      return;
-    }
-    if (!startAddress.trim() || !endAddress.trim()) {
-      setError('起點與終點不能為空！');
-      return;
-    }
-
-    try {
-      // Find driver info
-      const driver = drivers.find(d => d.email === selectedDriverEmail);
-      if (!driver) throw new Error('找不到選定司機');
-
-      // Prepare passenger info
-      let passId = 'guest';
-      let passName = '訪客乘客';
-      let passAvatar = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150';
-
-      if (selectedUserId === 'manual') {
-        passId = 'manual_' + Date.now();
-        passName = manualPassengerName.trim();
-      } else if (selectedUserId !== 'guest') {
-        const user = users.find(u => u.userId === selectedUserId);
-        if (user) {
-          passId = user.userId;
-          passName = user.name || user.displayName || '未命名乘客';
-          passAvatar = user.pictureUrl || '';
-        }
-      }
-
-      let schedTime: any = null;
-      if (isScheduled && scheduledTime) {
-        schedTime = Timestamp.fromDate(new Date(scheduledTime));
-      }
-
-      const orderData: any = {
-        userId: passId,
-        passengerId: passId, // Compatibility
-        passengerName: passName,
-        passengerAvatar: passAvatar,
-        driverId: driver.email,
-        driverName: driver.name,
-        carPlate: driver.plateNumber || driver.carPlate,
-        pickupLocation: {
-          lat: 25.0412 + (Math.random() - 0.5) * 0.01,
-          lng: 121.5645 + (Math.random() - 0.5) * 0.01,
-          address: startAddress.trim()
-        },
-        destination: {
-          lat: 25.0412 + (Math.random() - 0.5) * 0.01,
-          lng: 121.5645 + (Math.random() - 0.5) * 0.01,
-          address: endAddress.trim()
-        },
-        startAddress: startAddress.trim(), // Compatibility
-        endAddress: endAddress.trim(), // Compatibility
-        isElderlyCare: isElderlyCare,
-        isScheduled: isScheduled,
-        status: OrderStatus.ACCEPTED,
-        fare: Number(customFare) || 200,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      };
-
-      if (schedTime) {
-        orderData.scheduledTime = schedTime;
-      }
-
-      // Add to Firestore
-      await addDoc(collection(db, 'orders'), orderData);
-      
-      // Update driver status in Firestore to Busy (IN_SERVICE) so they can't be dispatched again immediately
-      const driverRef = doc(db, 'drivers', driver.email);
-      await updateDoc(driverRef, {
-        tripStatus: DriverTripStatus.IN_SERVICE,
-        updatedAt: serverTimestamp()
-      });
-
-      setShowDispatchModal(false);
-    } catch (err: any) {
-      console.error("Manual dispatch failed:", err);
-      setError(err.message || '派車失敗，請重試。');
-    }
-  };
-
-  const handleUpdateOrderStatus = async (orderId: string, actionType: 'complete' | 'cancel', driverEmail: string) => {
-    try {
-      const orderRef = doc(db, 'orders', orderId);
-      
-      if (actionType === 'complete') {
-        // Complete the order
-        await updateDoc(orderRef, {
-          status: OrderStatus.COMPLETED,
-          updatedAt: serverTimestamp()
-        });
-
-        // Set driver status back to Online (DriverTripStatus.IDLE)
-        if (driverEmail) {
-          const driverRef = doc(db, 'drivers', driverEmail);
-          await updateDoc(driverRef, {
-            tripStatus: DriverTripStatus.IDLE,
-            updatedAt: serverTimestamp()
-          });
-        }
-      } else {
-        // Cancel/Archive order
-        await updateDoc(orderRef, {
-          status: OrderStatus.CANCELLED_BY_USER,
-          updatedAt: serverTimestamp()
-        });
-
-        // Set driver status back to Online (DriverTripStatus.IDLE)
-        if (driverEmail) {
-          const driverRef = doc(db, 'drivers', driverEmail);
-          await updateDoc(driverRef, {
-            tripStatus: DriverTripStatus.IDLE,
-            updatedAt: serverTimestamp()
-          });
-        }
-      }
-    } catch (err) {
-      console.error("Failed to update order status:", err);
-      alert('更新狀態失敗！');
-    }
-  };
-
-  const handleDeleteOrder = async (orderId: string) => {
-    if (window.confirm('確定要刪除此訂單記錄嗎？此動作無法復原。')) {
-      try {
-        await deleteDoc(doc(db, 'orders', orderId));
-      } catch (err) {
-        console.error("Failed to delete order:", err);
-        alert('刪除失敗。');
-      }
-    }
-  };
 
   const getOrderStatusText = (status: any) => {
     const statusStr = String(status);
@@ -362,17 +140,18 @@ export default function OrderManager() {
       case '1': return '已派遣/進行中';
       case '2': return '已完成';
       case '0': return '已取消';
+      case 'SCHEDULED': return '預約中';
       case OrderStatus.PENDING: return '等待派車';
-      case OrderStatus.MATCHING: return '系統配車中';
-      case OrderStatus.ACCEPTED: return '司機接單';
-      case OrderStatus.ARRIVED: return '司機已抵達';
-      case OrderStatus.IN_PROGRESS: return '行程進行中';
+      case OrderStatus.MATCHING: return '媒合中';
+      case OrderStatus.ACCEPTED: return '前往上車地點';
+      case OrderStatus.ARRIVED: return '已抵達';
+      case OrderStatus.IN_PROGRESS: return '載客中';
       case OrderStatus.COMPLETED: return '已完成';
-      case OrderStatus.CANCELLED_BY_USER: return '乘客取消';
-      case OrderStatus.DRIVER_CANCELLED: return '司機取消';
-      case OrderStatus.NO_SHOW: return '乘客未搭乘';
-      case OrderStatus.FAILED_MATCH: return '配車失敗';
-      default: return '處理中';
+      case OrderStatus.CANCELLED_BY_USER: return '乘客已取消';
+      case OrderStatus.DRIVER_CANCELLED: return '已中止服務';
+      case OrderStatus.NO_SHOW: return '已回報乘客未出現';
+      case OrderStatus.FAILED_MATCH: return '媒合失敗';
+      default: return '訂單狀態待確認';
     }
   };
 
@@ -380,6 +159,7 @@ export default function OrderManager() {
     const statusStr = String(status);
     switch (statusStr) {
       case '1':
+      case 'SCHEDULED':
       case OrderStatus.PENDING:
       case OrderStatus.MATCHING:
         return 'status-pill online';
@@ -395,10 +175,11 @@ export default function OrderManager() {
     }
   };
 
-  const formatDate = (timestamp: any) => {
-    if (!timestamp) return '剛剛';
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    return date.toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const formatDate = (timestamp: Order['updatedAt']) => {
+    if (!timestamp?.toDate) return '時間未提供';
+    return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Taipei', year: 'numeric',
+      month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hourCycle: 'h23' }).format(timestamp.toDate()).replaceAll('-', '/');
   };
 
   // Filtering States
@@ -417,6 +198,7 @@ export default function OrderManager() {
       if (statusFilter === 'active') {
         matchesStatus = 
           (order.status as any) === 1 || 
+          statusStr === 'SCHEDULED' ||
           statusStr === 'PENDING' || 
           statusStr === 'MATCHING' || 
           statusStr === 'ACCEPTED' || 
@@ -441,10 +223,11 @@ export default function OrderManager() {
         const endAddr = order.destination?.address || order.endAddress || '';
         matchesSearch = 
           order.id.toLowerCase().includes(searchLower) ||
-          (order.readableId || '').toLowerCase().includes(searchLower) ||
+          (order.readableId || '').toLowerCase().includes(searchLower.replace(/^#/, '')) ||
           (order.passengerName || '').toLowerCase().includes(searchLower) ||
           passengerNumbers.get(order.passengerId || order.userId) === searchLower ||
           (order.driverName || '').toLowerCase().includes(searchLower) ||
+          (order.carPlate || '').toLowerCase().includes(searchLower) ||
           startAddr.toLowerCase().includes(searchLower) ||
           endAddr.toLowerCase().includes(searchLower);
       }
@@ -560,37 +343,34 @@ export default function OrderManager() {
       <div className="sheet-title-row">
         <div>
           <h2 className="sheet-title">訂單管理 ({filteredOrders.length})</h2>
-          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
             <button data-syslog="order.filter.all" onClick={() => setStatusFilter('all')} className={`category-pill ${statusFilter === 'all' ? 'active' : ''}`}>全部訂單</button>
             <button data-syslog="order.filter.active" onClick={() => setStatusFilter('active')} className={`category-pill ${statusFilter === 'active' ? 'active' : ''}`}>進行中</button>
             <button data-syslog="order.filter.completed" onClick={() => setStatusFilter('completed')} className={`category-pill ${statusFilter === 'completed' ? 'active' : ''}`}>已完成</button>
-            <button data-syslog="order.filter.closed" onClick={() => setStatusFilter('closed')} className={`category-pill ${statusFilter === 'closed' ? 'active' : ''}`}>已取消</button>
+            <button data-syslog="order.filter.closed" onClick={() => setStatusFilter('closed')} className={`category-pill ${statusFilter === 'closed' ? 'active' : ''}`}>取消／未完成</button>
           </div>
         </div>
 
-        <button data-syslog="order.open_dispatch" onClick={handleOpenDispatch} className="btn-primary">
-          <Plus size={16} />
-          手動派遣叫車
-        </button>
+
       </div>
 
       {/* Advanced Filter Inputs Bar */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
         {/* Search Input */}
-        <div className="search-wrapper" style={{ width: 280 }}>
+        <div className="search-wrapper order-search">
           <Search size={16} className="search-icon" />
           <input 
             type="text" 
             value={searchQuery}
             onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-            placeholder="搜尋乘客姓名／編號、司機、地址、訂單編號..."
+            placeholder="搜尋乘客姓名／編號、車牌／司機、地址、訂單編號"
             className="search-input"
           />
         </div>
 
         {/* Order Type Filter */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-          <span>乘車類型:</span>
+          <span>乘車類型：</span>
           <select 
             value={typeFilter}
             onChange={(e) => { setTypeFilter(e.target.value); setCurrentPage(1); }}
@@ -606,9 +386,9 @@ export default function OrderManager() {
             }}
           >
             <option value="ALL" style={{ background: '#0c0d14' }}>全部類型</option>
-            <option value="REGULAR" style={{ background: '#0c0d14' }}>一般車單</option>
-            <option value="ELDERLY" style={{ background: '#0c0d14' }}>敬老愛心車</option>
-            <option value="SCHEDULED" style={{ background: '#0c0d14' }}>預約車單</option>
+            <option value="REGULAR" style={{ background: '#0c0d14' }}>一般叫車</option>
+            <option value="ELDERLY" style={{ background: '#0c0d14' }}>敬老服務</option>
+            <option value="SCHEDULED" style={{ background: '#0c0d14' }}>預約叫車</option>
           </select>
         </div>
       </div>
@@ -619,102 +399,46 @@ export default function OrderManager() {
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>無任何訂單紀錄。</div>
       ) : (
         <div className="admin-table-container">
-          <table className="admin-table">
+          <table className="admin-table order-table">
+            <colgroup><col style={{ width: '15%' }} /><col style={{ width: '28%' }} /><col style={{ width: '32%' }} /><col style={{ width: '17%' }} /><col style={{ width: '8%' }} /></colgroup>
             <thead>
               <tr>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('passengerName')}>乘客資訊 {getSortIcon('passengerName')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('driverName')}>指派司機 / 車牌 {getSortIcon('driverName')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('startAddress')}>行程起迄點 {getSortIcon('startAddress')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('fare')}>車資費用 {getSortIcon('fare')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('status')}>派遣狀態 {getSortIcon('status')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('createdAt')}>派遣時間 {getSortIcon('createdAt')}</th>
-                <th>後台管理</th>
+                <th><button className="coupon-sort" onClick={() => requestSort('status')}>狀態 {getSortIcon('status')}</button><br />訂單編號</th>
+                <th><button className="coupon-sort" onClick={() => requestSort('passengerName')}>乘客姓名／編號 {getSortIcon('passengerName')}</button><br /><button className="coupon-sort" onClick={() => requestSort('driverName')}>車號司機 {getSortIcon('driverName')}</button></th>
+                <th><button className="coupon-sort" onClick={() => requestSort('startAddress')}>上車地 {getSortIcon('startAddress')}</button><br />目的地</th>
+                <th><button className="coupon-sort" onClick={() => requestSort('updatedAt')}>紀錄時間 {getSortIcon('updatedAt')}</button></th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody>
               {paginatedOrders.map((order) => (
                 <tr data-log-order={order.id} key={order.id}>
                   <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      {order.passengerAvatar ? (
-                        <img src={order.passengerAvatar} alt={order.passengerName || '乘客'} style={{ width: 28, height: 28, borderRadius: '50%' }} />
-                      ) : (
-                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem' }}>
-                          {(order.passengerName || '客')[0]}
-                        </div>
-                      )}
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center' }}>
-                          <span style={{ fontWeight: 600 }}>{order.passengerName || '訪客乘客'}</span>
-                          {order.isElderlyCare && (
-                            <span style={{ marginLeft: 6, fontSize: '0.65rem', padding: '1px 5px', background: 'rgba(99, 102, 241, 0.2)', color: 'var(--color-primary)', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: 4 }}>敬老</span>
-                          )}
-                          {order.isScheduled && (
-                            <span style={{ marginLeft: 6, fontSize: '0.65rem', padding: '1px 5px', background: 'rgba(234, 179, 8, 0.2)', color: 'var(--color-accent)', border: '1px solid rgba(234, 179, 8, 0.3)', borderRadius: 4 }}>預約</span>
-                          )}
-                        </div>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>乘客編號：{passengerNumbers.get(order.passengerId || order.userId) || '—'}</div>
-                      </div>
+                    <div className="order-cell-stack">
+                      <span className={getOrderStatusClass(order.status)}>{getOrderStatusText(order.status)}</span>
+                      <span className="order-number">{order.readableId ? `#${order.readableId}` : '編號待產生'}</span>
                     </div>
                   </td>
                   <td>
-                    <span style={{ fontWeight: 600, color: order.driverName === '未指派' ? 'var(--text-muted)' : 'var(--text-primary)' }}>
-                      {order.driverName}
-                    </span>
-                    {order.carPlate && (
-                      <div style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-secondary)', marginTop: 2 }}>
-                        {order.carPlate}
-                      </div>
-                    )}
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <span style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <MapPin size={10} className="text-cyan" />
-                        起點: {order.pickupLocation?.address || order.startAddress}
-                      </span>
-                      <span style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <MapPin size={10} className="text-gold" />
-                        終點: {order.destination?.address || order.endAddress}
-                      </span>
+                    <div className="order-cell-stack">
+                      <div className="order-passenger"><strong>{order.passengerName || '未提供'}</strong><span className="order-passenger-number">{passengerNumbers.get(order.passengerId || order.userId) || '—'}</span></div>
+                      <div className="order-driver">{order.carPlate && <span className="order-plate">{order.carPlate}</span>}<span>{order.driverName || (['PENDING', 'MATCHING', 'SCHEDULED'].includes(String(order.status)) ? '尚未指派' : '未提供')}</span></div>
                     </div>
                   </td>
-                  <td style={{ fontWeight: 700, color: 'white', fontFamily: 'Outfit' }}>
-                    NT$ {order.fare || 0}
-                  </td>
                   <td>
-                    <span className={getOrderStatusClass(order.status)}>
-                      {getOrderStatusText(order.status)}
-                    </span>
-                  </td>
-                  <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                    {formatDate(order.createdAt)}
-                  </td>
-                  <td>
-                    <div className="action-btn-row">
-                      {((order.status as any) === 1 || String(order.status) === 'ACCEPTED' || String(order.status) === 'IN_PROGRESS' || String(order.status) === 'ARRIVED' || String(order.status) === 'PENDING' || String(order.status) === 'MATCHING') && (
-                        <>
-                          <button 
-                            data-syslog="order.complete" onClick={() => handleUpdateOrderStatus(order.id, 'complete', order.driverId || '')}
-                            className="btn-icon edit" 
-                            style={{ borderColor: 'rgba(16, 185, 129, 0.3)', color: 'var(--color-success)' }}
-                            title="完成行程"
-                          >
-                            <Check size={14} />
-                          </button>
-                          <button 
-                            data-syslog="order.cancel" onClick={() => handleUpdateOrderStatus(order.id, 'cancel', order.driverId || '')}
-                            className="btn-icon delete" 
-                            title="取消叫車"
-                          >
-                            <X size={14} />
-                          </button>
-                        </>
-                      )}
-                      <button data-syslog="order.delete" onClick={() => handleDeleteOrder(order.id)} className="btn-icon delete" title="刪除記錄">
-                        <Trash2 size={14} />
-                      </button>
+                    <div className="order-cell-stack">
+                      <OrderAddress pickup location={order.pickupLocation} address={order.startAddress || order.pickupLocation?.address} />
+                      <OrderAddress pickup={false} location={order.destination} address={order.endAddress || order.destination?.address} />
                     </div>
+                  </td>
+                  <td className="order-recorded-at">
+                    <div className="order-cell-stack">
+                      <span>{formatDate(order.updatedAt)}</span>
+                      <div className="order-tags"><span data-kind={order.isScheduled ? 'scheduled' : 'instant'}>{order.isScheduled ? '預約' : '即時'}</span>{order.couponId && <span data-kind="coupon">優惠券</span>}{order.isElderlyCare && <span data-kind="elderly">敬老服務</span>}</div>
+                    </div>
+                  </td>
+                  <td>
+                    <button type="button" data-syslog="order.detail_open" onClick={() => setDetailId(order.id)} className="btn-secondary order-detail-button">看詳細</button>
                   </td>
                 </tr>
               ))}
@@ -798,180 +522,10 @@ export default function OrderManager() {
           )}
         </div>
       )}
-      </div>
+        {detailId && <OrderDetail key={detailId} orderId={detailId} onClose={() => setDetailId(null)} />}
+    </div>
 
-      {/* Manual Dispatch Modal */}
-      {showDispatchModal && (
-        <div className="modal-overlay">
-          <div className="glass modal-content animate-fade-in" style={{ background: '#0c0d16', border: '1px solid var(--border-color-hover)' }}>
-            <div className="modal-header">
-              <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Compass size={20} className="text-cyan" />
-                後台人工手動指派車輛
-              </h3>
-              <button onClick={() => setShowDispatchModal(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
-                <X size={18} />
-              </button>
-            </div>
 
-            {error && (
-              <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: 12, borderRadius: 'var(--radius-sm)', color: '#f87171', fontSize: '0.8rem', display: 'flex', gap: 6, alignItems: 'center' }}>
-                <AlertCircle size={16} />
-                <span style={{ flexGrow: 1 }}>{error}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleDispatchSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {/* Select Passenger */}
-              <div className="form-group">
-                <label className="form-label">選擇叫車乘客</label>
-                <select 
-                  value={selectedUserId} 
-                  onChange={(e) => setSelectedUserId(e.target.value)}
-                  className="form-select"
-                >
-                  <option value="guest">訪客乘車 (免註冊)</option>
-                  <option value="manual">手動輸入乘客姓名...</option>
-                  {users.map(u => (
-                    <option key={u.userId} value={u.userId}>{u.displayName} · {passengerNumber(u.passengerNumber) || '—'}</option>
-                  ))}
-                </select>
-              </div>
-
-              {selectedUserId === 'manual' && (
-                <div className="form-group">
-                  <label className="form-label">輸入乘客姓名</label>
-                  <input 
-                    type="text" 
-                    value={manualPassengerName}
-                    onChange={(e) => setManualPassengerName(e.target.value)}
-                    placeholder="例如：陳大明" 
-                    className="form-input"
-                    required
-                  />
-                </div>
-              )}
-
-              {/* Select Driver */}
-              <div className="form-group">
-                <label className="form-label">指派上線司機 (空車中)</label>
-                <select 
-                  value={selectedDriverEmail} 
-                  onChange={(e) => setSelectedDriverEmail(e.target.value)}
-                  className="form-select"
-                  required
-                >
-                  {onlineDrivers.length === 0 ? (
-                    <option value="">-- 無任何空閒司機上線中 --</option>
-                  ) : (
-                    onlineDrivers.map(d => (
-                      <option key={d.email} value={d.email}>{d.name} ({d.carPlate}) - {d.carMaker} {d.carModel}</option>
-                    ))
-                  )}
-                </select>
-                {onlineDrivers.length === 0 && (
-                  <p style={{ fontSize: '0.7rem', color: 'var(--color-accent)', marginTop: 4 }}>
-                    請先至「司機管理」將至少一位司機的狀態變更為「服務中」以進行測試派遣。
-                  </p>
-                )}
-              </div>
-
-              {/* Addresses */}
-              <div className="form-row">
-                <div className="form-group">
-                  <label className="form-label">上車起點地址</label>
-                  <input 
-                    type="text" 
-                    value={startAddress}
-                    onChange={(e) => setStartAddress(e.target.value)}
-                    placeholder="起點" 
-                    className="form-input"
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">下車終點地址</label>
-                  <input 
-                    type="text" 
-                    value={endAddress}
-                    onChange={(e) => setEndAddress(e.target.value)}
-                    placeholder="終點" 
-                    className="form-input"
-                    required
-                  />
-                </div>
-              </div>
-
-              {/* Fare */}
-              <div className="form-group">
-                <label className="form-label">預估行程車資 (NT$)</label>
-                <input 
-                  type="number" 
-                  value={customFare}
-                  onChange={(e) => setCustomFare(e.target.value)}
-                  placeholder="250" 
-                  className="form-input"
-                  min="0"
-                />
-              </div>
-
-              {/* Elderly Care & Reservations checkboxes */}
-              <div style={{ display: 'flex', gap: 20, alignItems: 'center', marginTop: 4 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={isElderlyCare}
-                    onChange={(e) => setIsElderlyCare(e.target.checked)}
-                    style={{ cursor: 'pointer', accentColor: 'var(--color-primary)' }}
-                  />
-                  <span>敬老愛心車 (愛心卡優惠)</span>
-                </label>
-
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={isScheduled}
-                    onChange={(e) => setIsScheduled(e.target.checked)}
-                    style={{ cursor: 'pointer', accentColor: 'var(--color-primary)' }}
-                  />
-                  <span>預約乘車單 (排定時間)</span>
-                </label>
-              </div>
-
-              {isScheduled && (
-                <div className="form-group animate-fade-in">
-                  <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Calendar size={14} className="text-gold" />
-                    選擇預約派遣時間
-                  </label>
-                  <input 
-                    type="datetime-local" 
-                    value={scheduledTime}
-                    onChange={(e) => setScheduledTime(e.target.value)}
-                    className="form-input"
-                    required={isScheduled}
-                    style={{
-                      color: 'var(--text-primary)',
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid var(--border-color)'
-                    }}
-                  />
-                </div>
-              )}
-
-              <div className="modal-footer">
-                <button type="button" onClick={() => setShowDispatchModal(false)} className="btn-secondary">
-                  取消
-                </button>
-                <button type="submit" className="btn-primary" disabled={onlineDrivers.length === 0}>
-                  <Compass size={16} />
-                  確認派遣出車
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </>
   );
 }

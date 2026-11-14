@@ -1091,3 +1091,40 @@ body.modal-open .workspace-tabs-bar {
   .checkout-action .coupon-help { text-align: left; }
   .checkout-filters, .checkout-selected { min-width: 0; max-width: 100%; }
 }
+
+/* 訂單列表：沿 AOS 的欄位名稱與兩行資訊順序。 */
+.order-search { width: min(100%, 520px); }
+.order-table { min-width: 1060px; table-layout: fixed; }
+.order-table th, .order-table td { padding: 18px 16px; overflow-wrap: anywhere; }
+.order-table th { line-height: 1.9; }
+.order-cell-stack { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.order-table .status-pill { white-space: normal; }
+.order-number { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.order-passenger, .order-driver { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.order-passenger-number { color: var(--text-secondary); font-size: 0.8rem; }
+.order-plate { display: inline-block; background: #fff; color: #bd2436; border: 1px solid #c7cbd0; border-radius: 4px; padding: 2px 8px; font: 700 0.85rem monospace; letter-spacing: 0.04em; }
+.order-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.order-tags span { color: var(--text-secondary); border: 1px solid var(--border-color-hover); border-radius: 4px; padding: 2px 6px; font-size: 0.7rem; }
+.order-address { width: 100%; display: flex; align-items: baseline; gap: 8px; line-height: 1.6; }
+.order-location-dot { color: #ffd84d; flex: 0 0 12px; font-size: 0.7rem; }
+.order-table .order-recorded-at { color: var(--text-secondary); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.order-table .action-btn-row { flex-wrap: wrap; }
+
+.order-address-content { flex: 1; min-width: 0; overflow-wrap: break-word; }
+.order-address-empty, .order-map-link { white-space: nowrap; }
+.order-map-link { margin-left: 10px; color: #9ac8ff; text-decoration: underline; text-underline-offset: 3px; }
+.order-map-link:hover { color: #c9e2ff; }
+
+/* 訂單 v3：輕量特性標籤與單一詳情容器。 */
+.order-tags [data-kind="instant"] {color:#9dc9ec;border-color:#9dc9ec40;background:#9dc9ec0a}
+.order-tags [data-kind="scheduled"] {color:#c2ade6;border-color:#c2ade640;background:#c2ade60a}
+.order-tags [data-kind="coupon"] {color:#d8be81;border-color:#d8be8140;background:#d8be810a}
+.order-tags [data-kind="elderly"] {color:#9ac8ad;border-color:#9ac8ad40;background:#9ac8ad0a}
+.order-detail-button {white-space:nowrap;padding:8px 10px;font-size:.8rem;min-height:40px}
+.order-detail-dialog {margin:auto;padding:0;width:min(580px,calc(100vw - 32px));height:min(900px,calc(100dvh - 40px));max-width:100vw;max-height:100dvh;border:1px solid #42536b;border-radius:16px;background:#10151e;color:#e5eaf1;overflow:hidden}
+.order-detail-dialog[open] {display:flex;flex-direction:column}
+.order-detail-dialog::backdrop {background:#000a}
+.order-detail-dialog>header {display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;background:#222e3e;flex-shrink:0}
+.order-detail-dialog h2 {font-size:1rem;margin:0}
+.order-detail-dialog iframe {width:100%;flex:1;min-height:0;border:0;background:#10151e}
+@media(max-width:600px) {.order-detail-dialog{width:100vw;height:100dvh;border-radius:0}}

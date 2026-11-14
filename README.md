@@ -1,5 +1,15 @@
 # LotusAH — Web 管理介面
 
+## 11/14 訂單管理 v3
+
+- 時間下方特性標籤：即時淡藍／預約淡紫／優惠券淡金／敬老服務淡綠。操作欄只留「看詳細」，移除原完成／取消／刪除直寫處理。
+- `OrderDetail.tsx` 使用原生置中 dialog 與同源 iframe；桌面直式卡片、窄視窗滿版。保留原列表篩選／頁碼／位置，關閉恢復焦點；登入身分變更即關閉，晚到回應丟棄。
+- `public/passenger-order/` 沿乘客原始 `order-card / order-map / order-chat / presentation` 與 CSS。卡片框線、排列、小地圖→行程軌跡、分司機對話與較早訊息一致。歷史卡顯示「重新叫車」並 disabled，進行中不出現；對話只查閱、不送出、不改乘客已讀。
+- 乘客共用資產來源為 FBase Lotus；使用 `node scripts/sync-passenger-order.cjs <FBase Lotus path>` 逐字同步，`shared/manifest.json` 保存 SHA256。副本勿單改。iframe 只傳白名單唯讀請求，parent 強制綁原 orderId，Firebase token 不送進 iframe；Map key 沿 AH 公開設定。
+- 詳情使用 `webAdmin.ORDER_DETAIL` 的乘客卡白名單，完單司機來自終態快照；列表仍直接讀 orders，列表歷史姓名缺值另待接線。詳情於開啟／重試時取得，地圖及對話依原流程更新；關閉重開可重新取得訂單卡。
+- 重要開關／地圖／對話與 API 結果沿三端 sysLog，僅白名單識別，不記訊息內容。`tests/passenger-number.browser.cjs` 使用實際元件／iframe／共用資產，Auth、HTTP、Maps 為隔離替身；驗卡片／停用重叫車／軌跡分段／對話分頁與 XSS／返回位置／列表頁碼／失敗重試／身分切換及 390px。
+- v3 正式建置與 Chrome fixture 通過，實際發布與真人結果見 root 交接。
+
 ## 11/13 NPC 退場（已部署回讀，待真人驗收）
 
 移除 MarketingManager 發券名單的 isNPC 分流及資料型別欄位；沿既有 ACTIVE／LINE 資格、乘客外碼、內碼交易、券管理與 sysLog。production build 與發券 Chrome fixture 通過。本輪 build-2026-11-13-007 已 READY／SUCCEEDED／100% 流量；22 來源檔逐字核對，8 線上資產正常；完整跨端退場範圍及正式入口保留見 Lotus root「NPC退場與正式入口保留.md」。

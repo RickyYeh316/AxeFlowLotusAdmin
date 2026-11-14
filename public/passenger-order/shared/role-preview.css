@@ -1,0 +1,40 @@
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#10151e;color:#e5eaf1}
+*{box-sizing:border-box}body{margin:0;padding:24px 16px 40px}a{color:#93c5fd}button,select{font:inherit;color:inherit;background:#243246;border:1px solid #52637b;border-radius:8px;padding:10px 12px}button{cursor:pointer}button:disabled,select:disabled{opacity:.45;cursor:default}button:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid #93c5fd;outline-offset:3px}[hidden]{display:none!important}
+.intro,footer{max-width:800px;margin:auto}.intro h1{font-size:26px;margin-bottom:8px}.intro p,footer{color:#b7c4d6;line-height:1.7}.controls{display:flex;flex-wrap:wrap;align-items:center;gap:12px}.controls label{display:flex;gap:8px;align-items:center}#auth-status{font-size:14px}.tag{display:inline-block;font-size:12px;font-weight:500;color:#bdd6f7;background:#283c55;padding:5px 8px;border-radius:6px;vertical-align:middle}
+.preview{max-width:540px;margin:24px auto;background:#171f2b;border:1px solid #354154;border-radius:18px;overflow:hidden}.role-heading{padding:20px 20px 12px}.role-heading h2{margin:0;font-size:22px}.role-heading p{color:#bdc9da;font-size:14px;line-height:1.6;margin-bottom:0}.tabs{display:flex;padding:0 12px;border-bottom:1px solid #354154;gap:8px}.tabs button{flex:1;background:none;border:0;border-radius:0;padding:14px 0;color:#aebdd1}.tabs button[aria-pressed=true]{color:#93c5fd;border-bottom:3px solid #60a5fa;font-weight:600}
+#current-panel{padding:16px}.stream-state{font-size:13px;color:#aebdd1;margin:0 0 16px;line-height:1.6}.order-card{border:1px solid #42536b;border-left:4px solid var(--status-color,#718096);border-radius:12px;background:#222e3e;padding:16px;margin-bottom:16px;overflow-wrap:anywhere}.card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.card-head h3{margin:0;font-size:18px}.badge{font-size:12px;white-space:nowrap;color:#d3e6fc;background:#354b65;padding:4px 7px;border-radius:5px}.card-meta,.note{color:#bdc9da;font-size:13px;line-height:1.6}.card-meta{margin:8px 0 14px}.location{margin:12px 0}.location span{display:block;color:#aabbd1;font-size:12px}.location strong{display:block;font-size:17px;margin-top:3px}.facts{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.fact{background:#182332;padding:10px;border-radius:8px}.fact dt{font-size:12px;color:#aebdd1}.fact dd{margin:4px 0 0;font-size:15px}.counts{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;text-align:center;border-top:1px solid #40506a;padding-top:14px}.counts strong{display:block;font-size:24px}.counts span{font-size:12px;color:#bdc9da}.countdown{color:#fcd77f;font-size:14px}.outcome{border-top:1px solid #40506a;padding-top:12px;color:#d6e7fc;line-height:1.6}.placeholder{border:1px dashed #3b4b62;border-radius:10px;padding:14px;margin:12px 0;color:#9daec3}.placeholder h3{font-size:14px;margin:0 0 6px}.placeholder p{font-size:13px;margin:0;line-height:1.6}#history-panel,#other-panel{margin:18px}footer{font-size:13px;text-align:center;margin-top:24px}
+@media(max-width:420px){body{padding:16px 10px}.intro h1{font-size:22px}.controls{gap:8px}.preview{margin-top:18px}.order-card{padding:12px}.facts{gap:8px}}
+#history-panel h3{margin-top:0}#history-panel summary{cursor:pointer;padding:10px 0;color:#93c5fd}#history-panel summary:focus-visible{outline:2px solid #93c5fd}#history-panel ol{padding-left:22px;line-height:1.8;font-size:14px}#history-more{width:100%}
+.history-controls{margin-bottom:16px}.history-controls button[aria-pressed=true]{color:#93c5fd;border-color:#60a5fa;font-weight:600}
+
+.menu-row { display: block; width: 100%; text-align: left; padding: 18px; }
+#coupon-panel { padding: 20px; }
+
+input{font:inherit;color:inherit;background:#182332;border:1px solid #52637b;border-radius:6px;padding:9px;max-width:100%}input[type=checkbox]{width:auto}input:focus-visible{outline:2px solid #93c5fd;outline-offset:3px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.actions button{min-height:44px}.error{color:#fda4af}#operation-feedback,#operation-pending{white-space:pre-wrap;overflow-wrap:anywhere}.intro details{margin:14px 0}.intro summary{cursor:pointer}#create-card label{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:14px 0}#create-card select{max-width:100%}#create-submit{width:100%;margin-top:12px}#create-card h3{margin-top:0}.intro .role-heading{padding:16px 0 8px}
+
+
+
+
+/* v2.15：控制器容器與獨立角色頁各自排版，角色頁不依賴父頁 DOM。 */
+.role-stage{max-width:800px;margin:24px auto}.role-stage iframe{display:block;width:100%;height:850px;height:85svh;min-height:520px;border:1px solid #42536b;border-radius:16px;background:#10151e}.role-entry{padding:16px 10px 24px}.role-entry-heading{max-width:540px}.role-entry-heading h1{font-size:22px}.role-entry .preview{margin:16px auto 0}.role-entry #entry-status{font-size:13px}.role-entry .controls{font-size:13px}
+.embedded-role #role-name,.embedded-role #entry-status,.embedded-role #entry-auth,.embedded-role #profile-state{display:none}.embedded-role #operation-feedback:empty,.embedded-role #operation-pending:empty{display:none}
+
+/* 訂單保存的司機識別；車號以白底紅字呈現，窄版整塊換行。 */
+.driver-identity{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin-top:6px}.driver-label{flex:0 0 auto}.driver-name{min-width:0;max-width:100%;overflow-wrap:anywhere}.taxi-plate{display:inline-block;flex:0 0 auto;box-sizing:border-box;max-width:100%;padding:2px 8px;border:1px solid #d6d6d6;border-radius:4px;background:#fff;color:#b51f32;font-family:"Arial Narrow",Arial,sans-serif;font-size:1rem;font-weight:700;letter-spacing:.06em;line-height:1.35;white-space:nowrap}
+/* 司機位置 → 上車地 → 目的地。 */
+.trip-location{display:grid;grid-template-columns:20px minmax(0,1fr) auto;align-items:center;gap:10px}
+.trip-marker{color:#fcd34d;text-align:center;font-size:18px}
+.trip-location .location{margin:6px 0}.trip-location .location strong{font-size:16px}
+.trip-distance{margin:2px 0 2px 9px;padding:9px 0 9px 20px;border-left:1px solid #64748b;color:#bdd6f7;font-size:13px}
+.trip-map{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:8px 10px;border:1px solid #52637b;border-radius:8px;background:#243246;color:#93c5fd;text-decoration:none;white-space:nowrap;font-size:14px}
+
+/* LIFF 乘客：初始化獨立顯示；就緒後分頁貼齊內容區頂端。 */
+body.line-passenger{padding:0}.line-passenger #initPage{max-width:540px;padding:16px 10px 24px}
+.line-passenger #initPage #auth-status{font-size:22px;white-space:pre-wrap;overflow-wrap:anywhere}
+.line-passenger .preview{margin:0 auto;border-radius:0 0 18px 18px}
+.line-passenger #operation-feedback:empty,.line-passenger #operation-pending:empty{display:none}
+
+/* 叫車表單與訂單備註；沿用現有深色元件與動態字級。 */
+.coupon-choice{display:flex;flex-wrap:wrap;align-items:center;gap:8px}#create-card .coupon-choice label{flex-wrap:nowrap}#create-use-coupon{flex-shrink:0}#create-use-coupon:disabled{opacity:.45}#create-card .coupon-choice label:has(input:disabled){opacity:.55}
+#create-card .order-note-label{margin-bottom:6px}#create-note{display:block;width:100%;min-width:0;font:inherit;line-height:1.5;color:inherit;background:#182332;border:1px solid #52637b;border-radius:6px;padding:9px;resize:none}#create-note:focus-visible{outline:2px solid #93c5fd;outline-offset:3px}.note-count{text-align:right}.order-note{margin:12px 0;overflow-wrap:anywhere}.order-note-text{white-space:pre-wrap;line-height:1.6}

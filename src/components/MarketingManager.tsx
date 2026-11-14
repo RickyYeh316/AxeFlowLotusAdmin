@@ -158,7 +158,7 @@ export default function MarketingManager() {
         <button className="btn-secondary" disabled={loading || disabled} onClick={() => void reload()}><RefreshCw size={14} />重新整理</button>
       </div>
       {!modal && feedback}
-      <p className="coupon-help">台灣時間：起始日 00:00:00 生效，到期日 23:59:59 截止。</p>
+      <p className="coupon-help">起始日 00:00:00 生效，到期日 23:59:59 截止。</p>
       {loading ? <p className="coupon-empty">載入優惠券中…</p> : !filtered.length ? <p className="coupon-empty">目前沒有{history ? '歷史優惠券' : '符合條件的優惠券'}。</p> : <>
         <div className="admin-table-container"><table className="admin-table"><thead><tr>
           {([['type', '類型'], ['title', '顯示名稱'], ['discountAmount', '折抵金額'], ['startDate', '有效起始日'], ['endDate', '有效到期日']] as const).map(([key, label]) =>
@@ -212,7 +212,7 @@ export default function MarketingManager() {
         if (window.confirm(`發送「${issuing.title}」${issuing.discountAmount}元券一張給「${recipient.name} · ${passengerNumber(recipient.passengerNumber) || '—'}」？發出後不回收。`)) void action(issuing, 'COUPON_ISSUE', { userId: selected, notifyPassenger });
       }}>
         <p><strong>{issuing.title}</strong> · 折抵 {issuing.discountAmount} 元</p>
-        <p className="coupon-help">{issuing.startDate} ～ {issuing.endDate}（台灣時間）</p>
+        <p className="coupon-help">{issuing.startDate} ～ {issuing.endDate}</p>
         {issuing.type === 2 ? <p className="coupon-help">每位正式有效乘客各一張；停權、已刪除與測試帳號略過。開始發券後的新戶不補發。此活動只能發一次，發出後不回收。<br />發券在背景處理，可關閉此頁。</p> : <>
         <p className="coupon-help">每次確認發送一張；同一乘客可再次獲得，發出後不回收。</p>
         <label className="form-group">搜尋乘客<input className="form-input" value={search} disabled={disabled} onChange={e => setSearch(e.target.value)} placeholder="姓名、電話或乘客編號" /></label>
@@ -244,7 +244,7 @@ export default function MarketingManager() {
           <label className="form-group">折抵金額（元）<input className="form-input" type="number" required min={1} step={1} value={form.discountAmount} onChange={e => setForm({ ...form, discountAmount: e.target.value })} /></label>
           <div className="form-row"><label className="form-group">有效起始日<input className="form-input" type="date" required value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} /></label>
             <label className="form-group">有效到期日<input className="form-input" type="date" required min={form.startDate || undefined} value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} /></label></div>
-          <p className="coupon-help">台灣時間：起始日 00:00:00 生效，到期日 23:59:59 截止。{editing?.type === 1 ? '修改只影響未來新戶配券，已領券保持。' : '儲存草稿後，再從列表執行發券。'}</p>
+          <p className="coupon-help">起始日 00:00:00 生效，到期日 23:59:59 截止。{editing?.type === 1 ? '修改只影響未來新戶配券，已領券保持。' : '儲存草稿後，再從列表執行發券。'}</p>
         </fieldset>
         <div className="modal-footer"><button type="button" className="btn-secondary" disabled={disabled} onClick={close}>取消</button><button className="btn-primary" disabled={disabled}>{busy ? '儲存中…' : editing?.type === 1 ? '儲存設定' : '儲存草稿'}</button></div>
       </form>}

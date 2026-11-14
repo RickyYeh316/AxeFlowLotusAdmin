@@ -1,0 +1,11 @@
+{
+  "shared/presentation.js": "4c77b762dfefa1ced12ad18d939c79125f9b63754e3fb28a206cddf69955ad67",
+  "shared/order-card.js": "00f7d682eebfc916c66e4330f4753e8f1ed805824f245ad088a632c702f3e278",
+  "shared/order-map.js": "9337c2a5470f09625f2f8139309a6a9da4c5b3a9560873905cd0a56af55914de",
+  "shared/order-chat.js": "eb4ecc83d8efbe71eb547381df9e4b2c805985b8b55db4b938836f150547eee7",
+  "shared/google-maps.js": "017849916c3dec095181afb7d3e77b7730b8dbdb4b7296f7c1f2a5e3e8b7a154",
+  "shared/role-preview.css": "9c52842cec489edfb4640177bfd2d4f015f7518d4bd752d2571d443be5fbf866",
+  "shared/order-map.css": "b418a34d59e98100a040000b9384edeb86550b51b9a5b22797fec6827b13d5ce",
+  "shared/order-chat.css": "a20a421e9c9b5ab0ae4ad6623c2053a5b4c4ba7ffdd522c57fd3cc8ab71c16ca",
+  "passenger/mobile-ui.css": "a451830cbf31751d8821a9dd7b916e0fe4a1a531615f75b7449bb771b414c487"
+}
