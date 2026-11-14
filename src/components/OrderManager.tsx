@@ -190,7 +190,6 @@ export default function OrderManager() {
           pictureUrl: data.pictureUrl || '',
           tripStatus: parsedTripStatus as UserTripStatus,
           accountStatus: parsedAccountStatus as UserAccountStatus,
-          noShowCount: data.noShowCount || 0,
           createdAt: data.createdAt,
           updatedAt: data.updatedAt
         });
@@ -284,6 +283,11 @@ export default function OrderManager() {
         let aVal = a[sortConfig.key];
         let bVal = b[sortConfig.key];
 
+        if (sortConfig.key === 'passengerNumber') {
+          aVal = passengerNumbers.get(a.passengerId || a.userId) || '';
+          bVal = passengerNumbers.get(b.passengerId || b.userId) || '';
+        }
+
         if (sortConfig.key === 'readableId' || sortConfig.key === 'endAddress') {
           const result = String(aVal ?? '').localeCompare(String(bVal ?? ''), 'zh-Hant', { numeric: true });
           return sortConfig.direction === 'ascending' ? result : -result;
@@ -306,7 +310,7 @@ export default function OrderManager() {
       });
     }
     return sortable;
-  }, [filteredOrders, sortConfig]);
+  }, [filteredOrders, sortConfig, passengerNumbers]);
 
   const totalPages = Math.ceil(sortedOrders.length / itemsPerPage);
   useEffect(() => {
@@ -417,7 +421,11 @@ export default function OrderManager() {
             <thead>
               <tr>
                 <th><button className="coupon-sort" onClick={() => requestSort('status')}>狀態 {getSortIcon('status')}</button><br /><button className="coupon-sort" data-syslog="order.sort.number" onClick={() => requestSort('readableId')}>訂單編號 {getSortIcon('readableId')}</button></th>
-                <th><button className="coupon-sort" onClick={() => requestSort('passengerName')}>乘客姓名／編號 {getSortIcon('passengerName')}</button><br /><button className="coupon-sort" onClick={() => requestSort('driverName')}>車號司機 {getSortIcon('driverName')}</button></th>
+                <th><div className="passenger-heading">
+                  <button data-syslog="order.sort.passengerName" onClick={() => requestSort('passengerName')}>乘客姓名{getSortIcon('passengerName')}</button>
+                  <span>/</span>
+                  <button data-syslog="order.sort.passengerNumber" onClick={() => requestSort('passengerNumber')}>編號{getSortIcon('passengerNumber')}</button>
+                </div><button className="coupon-sort" onClick={() => requestSort('driverName')}>車號司機 {getSortIcon('driverName')}</button></th>
                 <th><button className="coupon-sort" onClick={() => requestSort('startAddress')}>上車地 {getSortIcon('startAddress')}</button><br /><button className="coupon-sort" data-syslog="order.sort.destination" onClick={() => requestSort('endAddress')}>目的地 {getSortIcon('endAddress')}</button></th>
                 <th><button className="coupon-sort" onClick={() => requestSort('updatedAt')}>紀錄時間 {getSortIcon('updatedAt')}</button></th>
                 <th>操作</th>

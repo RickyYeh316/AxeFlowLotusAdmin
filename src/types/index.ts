@@ -89,7 +89,6 @@ export interface User {
   accountStatus: UserAccountStatus;
   phoneNumber?: string;
   currentOrderId?: string;
-  noShowCount: number;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   // Compatibility helpers

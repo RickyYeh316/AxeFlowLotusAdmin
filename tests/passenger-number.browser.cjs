@@ -20,15 +20,26 @@ const loader = write('loader.cjs', `const ts=require(${JSON.stringify(require.re
 const entry = write('entry.js', `import {startSystemLog,logScreen} from ${JSON.stringify(path.join(root,'src/lib/systemLogs/client.ts'))}; import React from 'react'; import {createRoot} from 'react-dom/client'; import Manager from ${JSON.stringify(path.join(root,'src/components/UserManager.tsx'))}; import Orders from ${JSON.stringify(path.join(root,'src/components/OrderManager.tsx'))}; const view=createRoot(document.getElementById('root')); const createLog=window.LotusSystemLog.create; window.LotusSystemLog.create=o=>createLog({...o,intervalMs:20,uploadIntervalMs:0,minUploadMs:0,priorityDelayMs:0});startSystemLog();window.showView=which=>{logScreen(which);view.render(React.createElement(which==='orders'?Orders:Manager))}; window.showView('users');`);
 const store = write('firestore.js', `
 export const collection=(_db,name)=>({name});
-export const onSnapshot=(ref,callback)=>{let active=true;const emit=()=>{if(active)callback({forEach:fn=>(window.fixture[ref.name]||[]).forEach(d=>fn({id:d.id,data:()=>d.data}))})};if(ref.name==='orders')window.reemitOrders=emit;queueMicrotask(emit);return()=>{active=false}};
+export const onSnapshot=(ref,callback)=>{let active=true;const emit=()=>{if(active)callback({forEach:fn=>(window.fixture[ref.name]||[]).forEach(d=>fn({id:d.id,data:()=>d.data}))})};if(ref.name==='orders')window.reemitOrders=emit;if(ref.name==='users')window.reemitUsers=emit;queueMicrotask(emit);return()=>{active=false}};
 export const Timestamp={now:()=>({toDate:()=>new Date()}),fromDate:v=>v};
 export const addDoc=()=>{throw Error('Unexpected write')};export const updateDoc=addDoc;export const deleteDoc=addDoc;
 export const doc=(_db,...parts)=>parts.join('/');export const serverTimestamp=()=>null;
 `);
 const fixture = `
-window.confirm=()=>false;window.uploadedLogs=[];window.fetch=async(url,init)=>{if(String(url).endsWith('/uploadSystemLogs')){const b=JSON.parse(init.body);window.uploadedLogs.push(b);return {ok:true,json:async()=>({batchId:b.batchId,accepted:b.events.length})}}throw Error('Unexpected network')};
+window.countReads=[];window.countOffset=0;window.countsFailure=false;window.holdCounts=false;window.heldCounts=[];
+window.confirm=()=>false;window.uploadedLogs=[];window.fetch=async(url,init)=>{
+ if(String(url).endsWith('/webAdmin')){
+  const body=JSON.parse(init.body);if(body.action!=='PASSENGER_COUNTS')throw Error('Unexpected action');
+  if(init.headers.Authorization!=='Bearer fixture-token')throw Error('Missing token');
+  countReads.push(body);
+  if(countsFailure)return {ok:false,status:503,json:async()=>({error:'統計暫時無法讀取'})};
+  const result={items:body.userIds.map(id=>({userId:id,counts:id==='MEMBER-private-2'?null:{completedTripCount:id==='MEMBER-private-1'?0:20+countOffset,cancelAfterAcceptCount:id==='MEMBER-private-1'?0:5,noShowCount:id==='MEMBER-private-1'?0:1}}))};
+  if(holdCounts)await new Promise(resolve=>heldCounts.push(resolve));
+  return {ok:true,status:200,json:async()=>result};
+ }
+if(String(url).endsWith('/uploadSystemLogs')){const b=JSON.parse(init.body);window.uploadedLogs.push(b);return {ok:true,json:async()=>({batchId:b.batchId,accepted:b.events.length})}}throw Error('Unexpected network')};
 const numbers=['000123','123456','0123456','00001234',null];
-window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{passengerName:'乘客'+i,passengerNumber:number,tripStatus:'IDLE',accountStatus:'ACTIVE',phoneNumber:'',createdAt:{toDate:()=>new Date('2026-11-13T00:00:00Z')},updatedAt:{toDate:()=>new Date('2026-11-13T00:00:00Z')}}})),drivers:[],orders:numbers.map((_,i)=>({id:'order-private-'+i,data:{userId:'MEMBER-private-'+i,passengerId:'MEMBER-private-'+i,passengerName:'乘客'+i,readableId:'8'+String(i).padStart(5,'0'),status:'COMPLETED',isScheduled:i===1,isElderlyCare:i===1,couponId:i===1?'coupon-1':'',pickupLocation:i===0?{lat:23.991,lng:121.601}:undefined,destination:i===1?{lat:24.01,lng:121.62}:i===2?{lat:91,lng:121}:i===3?{lat:24,lng:'121'}:undefined,driverName:i===0?'測試司機':'',carPlate:i===0?'TEA-5596':'',startAddress:i===0?'花蓮縣花蓮市富裕二街30-1號':'花蓮',endAddress:i===0?'':'花蓮縣新城鄉北埔路415-1號',createdAt:{toDate:()=>new Date('2026-11-13T00:00:00Z')},updatedAt:{toDate:()=>new Date('2026-11-13T00:00:00Z')}}}))};
+window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{passengerName:'乘客'+i,passengerNumber:number,tripStatus:'IDLE',accountStatus:'ACTIVE',phoneNumber:'0999000000',createdAt:{toDate:()=>new Date('2026-11-13T00:00:00Z')},updatedAt:{toDate:()=>new Date('2026-11-13T00:00:00Z')}}})),drivers:[],orders:numbers.map((_,i)=>({id:'order-private-'+i,data:{userId:'MEMBER-private-'+i,passengerId:'MEMBER-private-'+i,passengerName:'乘客'+i,readableId:'8'+String(i).padStart(5,'0'),status:'COMPLETED',isScheduled:i===1,isElderlyCare:i===1,couponId:i===1?'coupon-1':'',pickupLocation:i===0?{lat:23.991,lng:121.601}:undefined,destination:i===1?{lat:24.01,lng:121.62}:i===2?{lat:91,lng:121}:i===3?{lat:24,lng:'121'}:undefined,driverName:i===0?'測試司機':'',carPlate:i===0?'TEA-5596':'',startAddress:i===0?'花蓮縣花蓮市富裕二街30-1號':'花蓮',endAddress:i===0?'':'花蓮縣新城鄉北埔路415-1號',createdAt:{toDate:()=>new Date('2026-11-13T00:00:00Z')},updatedAt:{toDate:()=>new Date('2026-11-13T00:00:00Z')}}}))};
 `;
 (async () => {
   await new Promise((resolve,reject)=>webpack({mode:'production',plugins:[new webpack.DefinePlugin({'process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY':JSON.stringify('fixture-maps-key')})],entry,output:{path:temp,filename:'bundle.js'},
@@ -65,6 +76,7 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     const fill=async(selector,value)=>{await run(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(el instanceof HTMLSelectElement?HTMLSelectElement.prototype:el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));})()`);};
     await send('Runtime.enable');await send('Page.enable');
     await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+    await send('Emulation.setTimezoneOverride',{timezoneId:'America/Los_Angeles'});
     await send('Page.navigate',{url:`http://127.0.0.1:${server.address().port}`});
     await wait(`document.querySelectorAll('tbody tr').length===5`);
     assert.equal(await run(`document.querySelector('tbody').textContent.includes('MEMBER-private')`),false);
@@ -72,18 +84,78 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     assert.equal(await run(`document.querySelector('tbody').textContent.includes('—')`),true);
     for(const number of ['000123','123456','0123456','00001234']) {
       await fill('input.search-input',number);await wait(`document.querySelectorAll('tbody tr').length===1`);
-      assert.equal(await run(`document.querySelector('tbody tr td:nth-child(2)').textContent.trim()`),number);
+      assert.equal(await run(`document.querySelector('tbody tr .passenger-number').textContent.trim()`),number);
     }
     await fill('input.search-input','MEMBER-private');await wait(`document.querySelectorAll('tbody tr').length===0`);
     await fill('input.search-input','');await wait(`document.querySelectorAll('tbody tr').length===5`);
+    await wait(`document.querySelector('tbody tr .passenger-count')?.textContent==='20'`);
+    assert.deepEqual(await run(`[...document.querySelectorAll('thead th')].map(el=>el.innerText.replaceAll('\\n','').trim())`),['乘客姓名/編號','帳號權限','叫車行程','完成搭乘','棄單','未出現','註冊時間','管理操作']);
+    assert.deepEqual(await run(`[...document.querySelectorAll('tbody tr')].slice(0,3).map(r=>[...r.querySelectorAll('.passenger-count')].map(c=>c.textContent))`),[['20','5','1'],['0','0','0'],['—','—','—']]);
+    assert.equal(await run(`document.querySelector('tbody').innerText.includes('2026/11/13 08:00:00')`),true);
+    assert.equal(await run(`document.body.innerText.includes('聯絡電話')||document.body.innerText.includes('棄單次數')`),false);
+    await fill('input.search-input','0999000000');await wait(`document.querySelectorAll('tbody tr').length===0`);
+    await fill('input.search-input','');await wait(`document.querySelectorAll('tbody tr').length===5`);
+    await run(`document.querySelector('[data-syslog="users.sort.number"]').click()`);
+    await wait(`document.querySelector('tbody .passenger-number').textContent==='—'`);
+    await run(`document.querySelector('[data-syslog="users.sort.name"]').click()`);
+    await wait(`document.querySelector('tbody .passenger-name').textContent==='乘客0'`);
+    await run(`countsFailure=true;document.querySelector('[data-syslog="users.reload"]').click()`);
+    await wait(`document.querySelector('[role="alert"]')?.innerText.includes('統計暫時無法讀取')`);
+    assert.equal(await run(`document.querySelector('tbody .passenger-count').textContent`),'讀取失敗');
+    await run(`countsFailure=false;document.querySelector('[data-syslog="users.retry"]').click()`);
+    await wait(`!document.querySelector('[role="alert"]')&&document.querySelector('tbody .passenger-count')?.textContent==='20'`);
+    // 較新 snapshot 已更新時，晚回應不可覆蓋；換身分立即清空。
+    await run(`holdCounts=true;reemitUsers()`);await wait(`heldCounts.length===1`);
+    await run(`holdCounts=false;countOffset=100;reemitUsers()`);
+    await wait(`document.querySelector('tbody .passenger-count')?.textContent==='120'`);
+    await run(`heldCounts.shift()()`);await new Promise(r=>setTimeout(r,100));
+    assert.equal(await run(`document.querySelector('tbody .passenger-count').textContent`),'120');
+    await run(`holdCounts=true;reemitUsers()`);await wait(`heldCounts.length===1`);
+    await run(`changeUser('other-admin');heldCounts.shift()()`);
+    await wait(`document.querySelectorAll('tbody tr').length===0&&document.body.innerText.includes('登入身分已變更')`);
+    await run(`holdCounts=false;countOffset=0;changeUser('test-admin');document.querySelector('[data-syslog="users.retry"]').click()`);
+    await wait(`document.querySelector('tbody .passenger-count')?.textContent==='20'`);
+    // 超過 100 人的統計請求分批，UI 分頁仍沿既有 10 人。
+    await run(`window.savedUsers=fixture.users;fixture.users=Array.from({length:101},(_,i)=>({id:'batch-'+i,data:{...savedUsers[0].data,passengerName:'批次'+i}}));countReads=[];reemitUsers()`);
+    await wait(`countReads.length===2&&document.querySelector('tbody .passenger-count')?.textContent==='20'`);
+    assert.deepEqual(await run(`countReads.map(r=>r.userIds.length)`),[100,1]);
+    assert.equal(await run(`document.querySelectorAll('tbody tr').length`),10);
+    await run(`fixture.users=savedUsers;reemitUsers()`);
+    await wait(`document.querySelectorAll('tbody tr').length===5&&document.querySelector('tbody .passenger-count')?.textContent==='20'`);
+    console.log('PASS: 乘客姓名編號合欄與雙排序、移除電話／舊棄單、Taipei跨時區、三統計0／缺值／錯誤重試、100人分批、晚回應與帳號隔離。');
     await run(`document.getAnimations().forEach(a=>a.finish())`);
     fs.writeFileSync(path.join(temp,'users.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    await run(`fixture.users[0].data.passengerName='BruceAppRD 陳威廷 Ready 長姓名測試';reemitUsers()`);
+    await send('Emulation.setDeviceMetricsOverride',{width:390,height:900,deviceScaleFactor:1,mobile:true});
+    await wait(`Array.from(document.querySelectorAll('tbody tr')).some(row=>row.querySelector('.passenger-name').textContent.includes('BruceAppRD')&&row.querySelector('.passenger-count').textContent==='20')`);
+    assert.equal(await run(`document.querySelector('.admin-table-container').scrollWidth>document.querySelector('.admin-table-container').clientWidth`),true);
+    await run(`document.getAnimations().forEach(a=>a.finish())`);
+    fs.writeFileSync(path.join(temp,'users-390.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    await run(`document.querySelector('.admin-table-container').scrollLeft=99999`);
+    assert.equal(await run(`document.querySelector('tbody tr td:last-child').getBoundingClientRect().right<=innerWidth`),true);
+    await wait(`uploadedLogs.some(b=>b.events.some(e=>e.type==='REQUEST_SENT'&&e.details?.action==='PASSENGER_COUNTS'))`);
+    assert.equal(await run(`JSON.stringify(uploadedLogs).includes('MEMBER-private')`),false);
+    if(process.argv.includes('--users-only')){console.log('PASS: 390px長姓名／表格橫捲與統計sysLog，無會員內碼／姓名內容。Screenshots: '+temp);return;}
+    await run(`fixture.users[0].data.passengerName='乘客0';reemitUsers()`);
+    await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
     await run(`showView('orders')`);await wait(`document.querySelector('[data-syslog="order.filter.serving"]')?.getAttribute('aria-pressed')==='true'`);await run(`document.querySelector('[data-syslog="order.filter.all"]').click()`);await wait(`document.querySelectorAll('tbody tr').length===5`);
     assert.equal(await run(`document.querySelector('tbody').textContent.includes('MEMBER-private')`),false);
     await fill('input.search-input','123456');await wait(`document.querySelectorAll('tbody tr').length===2`);
     assert.equal(await run(`document.querySelector('tbody').textContent.includes('123456')`),true);
     await fill('input.search-input','000123');await wait(`document.querySelector('tbody').textContent.includes('000123')`);
     await fill('input.search-input','');await wait(`document.querySelectorAll('tbody tr').length===5`);
+    await run(`document.querySelector('[data-syslog="order.sort.passengerNumber"]').click()`);
+    await wait(`document.querySelector('tbody .order-passenger-number')?.textContent==='—'`);
+    assert.equal(await run(`!!document.querySelector('[data-syslog="order.sort.passengerNumber"] svg')&&!document.querySelector('[data-syslog="order.sort.passengerName"] svg')`),true);
+    await run(`document.querySelector('[data-syslog="order.sort.passengerNumber"]').click()`);
+    await wait(`document.querySelector('tbody .order-passenger-number')?.textContent==='123456'`);
+    await run(`document.querySelector('[data-syslog="order.sort.passengerName"]').click()`);
+    await wait(`document.querySelector('tbody .order-passenger strong')?.textContent==='乘客0'`);
+    assert.equal(await run(`!!document.querySelector('[data-syslog="order.sort.passengerName"] svg')&&!document.querySelector('[data-syslog="order.sort.passengerNumber"] svg')`),true);
+    await run(`document.querySelector('[data-syslog="order.sort.passengerName"]').click()`);
+    await wait(`document.querySelector('tbody .order-passenger strong')?.textContent==='乘客4'`);
+    await run(`document.querySelector('[data-syslog="order.sort.passengerName"]').click()`);
+    await wait(`document.querySelector('tbody .order-passenger strong')?.textContent==='乘客0'`);
     await run(`document.getAnimations().forEach(a=>a.finish())`);
     fs.writeFileSync(path.join(temp,'orders.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
     assert.equal(await run(`document.querySelectorAll('thead th').length`),5);

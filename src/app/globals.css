@@ -1149,3 +1149,21 @@ body.modal-open .workspace-tabs-bar {
 .order-subcategory option {background:#10151e;color:#e5eaf1}
 
 .order-title-content {width:100%;min-width:0}
+
+/* 乘客列表：姓名與外碼同欄，統計保持對齊；窄畫面沿 table container 橫向捲動。 */
+.passenger-heading, .passenger-identity, .passenger-name-number { display: flex; align-items: center; gap: 12px; }
+.passenger-heading { gap: 6px; }
+.passenger-heading button { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.passenger-heading button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 4px; }
+.passenger-identity img { width: 36px; height: 36px; flex: 0 0 36px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border-color); }
+.passenger-name-number { flex-wrap: wrap; }
+.passenger-name { font-weight: 700; overflow-wrap: anywhere; }
+.passenger-number { color: var(--text-secondary); font-size: .85rem; font-family: monospace; white-space: nowrap; }
+.passenger-sheet .passenger-count { text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.passenger-read-error { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; color: var(--color-danger); }
+
+.passenger-sheet .sheet-title-row { flex-wrap: wrap; gap: 16px; }
+.passenger-sheet .admin-table { min-width: 1080px; }
+.passenger-sheet .admin-table td:first-child { min-width: 270px; max-width: 420px; }
+
+.passenger-sheet [data-syslog="users.reload"] { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }

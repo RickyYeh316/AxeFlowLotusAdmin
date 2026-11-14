@@ -3,15 +3,25 @@
 import { passengerNumber } from '../lib/passengerNumber';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { db } from '../firebase/config';
+import { auth, db } from '../firebase/config';
 import { collection, onSnapshot, doc, updateDoc } from '../lib/loggedFirestore';
-import { Search, UserCheck, ShieldAlert, Award, ChevronUp, ChevronDown, Trash2, Ban, CheckCircle } from 'lucide-react';
+import { Search, ChevronUp, ChevronDown, Ban, CheckCircle, RefreshCw } from 'lucide-react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { adminApi } from '../lib/adminApi';
+import { recordSystemLog } from '../lib/systemLogs/client';
 import { User, UserTripStatus, UserAccountStatus } from '../types';
+
+type PassengerCounts = { completedTripCount: number; cancelAfterAcceptCount: number; noShowCount: number };
 
 export default function UserManager() {
   const [users, setUsers] = useState<User[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [counts, setCounts] = useState<Record<string, PassengerCounts | null>>({});
+  const [countsLoading, setCountsLoading] = useState(true);
+  const [countsError, setCountsError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Sorting State
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'ascending' | 'descending' } | null>({
@@ -30,7 +40,40 @@ export default function UserManager() {
 
   // Subscribe to Firestore users collection
   useEffect(() => {
+    let active = true, revision = 0;
+    const owner = auth.currentUser?.uid;
+    const sameOwner = () => active && auth.currentUser?.uid === owner;
+    const stopAuth = onAuthStateChanged(auth, user => {
+      if (active && user?.uid !== owner) {
+        active = false;
+        setUsers([]); setCounts({}); setCountsLoading(false); setCountsError(''); setLoading(false);
+        setLoadError('登入身分已變更，請重新開啟頁面。');
+      }
+    });
+    setLoading(true); setLoadError(''); setCounts({}); setCountsError(''); setCountsLoading(true);
+    const readCounts = async (list: User[], version: number) => {
+      try {
+        const values: Record<string, PassengerCounts | null> = {};
+        for (let offset = 0; offset < list.length; offset += 100) {
+          if (!sameOwner() || version !== revision) return;
+          const result = await adminApi<{ items: { userId: string; counts: PassengerCounts | null }[] }>({
+            action: 'PASSENGER_COUNTS', userIds: list.slice(offset, offset + 100).map(user => user.userId),
+          });
+          if (!sameOwner() || version !== revision) return;
+          result.items.forEach(item => { values[item.userId] = item.counts; });
+        }
+        if (!sameOwner() || version !== revision) return;
+        setCounts(values); setCountsLoading(false);
+      } catch (error) {
+        if (!sameOwner() || version !== revision) return;
+        setCounts({}); setCountsLoading(false);
+        setCountsError(error instanceof Error ? error.message : '乘客統計讀取失敗，請重試。');
+      }
+    };
     const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
+      if (!sameOwner()) return;
+      const version = ++revision;
+      setCounts({}); setCountsError(''); setCountsLoading(true);
       const list: User[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
@@ -59,32 +102,36 @@ export default function UserManager() {
           pictureUrl: data.pictureUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
           tripStatus: parsedTripStatus as UserTripStatus,
           accountStatus: parsedAccountStatus as UserAccountStatus,
-          phoneNumber: data.phoneNumber || '',
-          noShowCount: data.noShowCount || 0,
           createdAt: data.createdAt,
           updatedAt: data.updatedAt
         });
       });
       setUsers(list);
       setLoading(false);
+      void readCounts(list, version);
     }, (error) => {
-      console.error("Error subscribing to users:", error);
-      setLoading(false);
+      if (!sameOwner()) return;
+      revision++;
+      setUsers([]); setCounts({}); setCountsLoading(false); setCountsError(''); setLoading(false);
+      setLoadError('乘客名單讀取失敗，請確認登入權限後重試。');
     });
 
-    return () => unsub();
-  }, []);
+    return () => { active = false; revision++; stopAuth(); unsub(); };
+  }, [reloadKey]);
+
+  useEffect(() => {
+    recordSystemLog('SCREEN_STATE', { screen: 'users', loading: loading || countsLoading,
+      count: users.length, enabled: !loadError && !countsError,
+      ...(loadError || countsError ? { reason: 'READ_FAILED' } : {}) });
+  }, [loading, countsLoading, loadError, countsError, users.length]);
 
   const formatDate = (timestamp: any) => {
     if (!timestamp) return '未記錄';
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    return date.toLocaleString('zh-TW', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    if (!Number.isFinite(date.getTime())) return '未記錄';
+    return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Taipei', year: 'numeric',
+      month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hourCycle: 'h23' }).format(date).replaceAll('-', '/');
   };
 
   // Filtering States
@@ -97,8 +144,7 @@ export default function UserManager() {
       const searchLower = searchQuery.trim().toLowerCase();
       const nameMatch = user.passengerName.toLowerCase().includes(searchLower);
       const idMatch = passengerNumber(user.passengerNumber) === searchLower;
-      const phoneMatch = (user.phoneNumber || '').toLowerCase().includes(searchLower);
-      const matchesSearch = nameMatch || idMatch || phoneMatch;
+      const matchesSearch = nameMatch || idMatch;
 
       let matchesAccount = true;
       if (accountFilter !== 'ALL') {
@@ -143,6 +189,7 @@ export default function UserManager() {
       direction = 'descending';
     }
     setSortConfig({ key, direction });
+    recordSystemLog('UI_CHANGE', { control: 'users.sort', status: key, reason: direction });
     setCurrentPage(1);
   };
 
@@ -226,7 +273,7 @@ export default function UserManager() {
   };
 
   return (
-    <div className="glass content-sheet animate-fade-in">
+    <div className="glass content-sheet animate-fade-in passenger-sheet">
       <div className="sheet-title-row">
         <div>
           <h2 className="sheet-title">乘客管理 ({filteredUsers.length})</h2>
@@ -289,13 +336,20 @@ export default function UserManager() {
               type="text" 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜尋姓名、電話或乘客編號"
+              placeholder="搜尋姓名或乘客編號"
               className="search-input"
             />
           </div>
+          <button className="btn-secondary" data-syslog="users.reload" onClick={() => setReloadKey(key => key + 1)} disabled={loading || countsLoading}>
+            <RefreshCw size={16} /> 重新整理
+          </button>
         </div>
       </div>
 
+      {(loadError || countsError) && <div role="alert" className="passenger-read-error">
+        <span>{loadError || `乘客統計讀取失敗：${countsError}`}</span>
+        <button className="btn-secondary" data-syslog="users.retry" onClick={() => setReloadKey(key => key + 1)}>重試</button>
+      </div>}
       {loading ? (
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>載入乘客名單中...</div>
       ) : filteredUsers.length === 0 ? (
@@ -307,12 +361,16 @@ export default function UserManager() {
           <table className="admin-table">
             <thead>
               <tr>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('passengerName')}>乘客名稱 {getSortIcon('passengerName')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('passengerNumber')}>乘客編號 {getSortIcon('passengerNumber')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('phoneNumber')}>聯絡電話 {getSortIcon('phoneNumber')}</th>
+                <th><div className="passenger-heading">
+                  <button data-syslog="users.sort.name" onClick={() => requestSort('passengerName')}>乘客姓名{getSortIcon('passengerName')}</button>
+                  <span>/</span>
+                  <button data-syslog="users.sort.number" onClick={() => requestSort('passengerNumber')}>編號{getSortIcon('passengerNumber')}</button>
+                </div></th>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('accountStatus')}>帳號權限 {getSortIcon('accountStatus')}</th>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('tripStatus')}>叫車行程 {getSortIcon('tripStatus')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('noShowCount')}>棄單次數 {getSortIcon('noShowCount')}</th>
+                <th className="passenger-count">完成搭乘</th>
+                <th className="passenger-count">棄單</th>
+                <th className="passenger-count">未出現</th>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('createdAt')}>註冊時間 {getSortIcon('createdAt')}</th>
                 <th>管理操作</th>
               </tr>
@@ -339,16 +397,13 @@ export default function UserManager() {
                 return (
                   <tr key={user.userId}>
                     <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <img src={user.pictureUrl} alt={user.passengerName} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-color)' }} />
-                        <span style={{ fontWeight: 700 }}>{user.passengerName}</span>
+                      <div className="passenger-identity">
+                        <img src={user.pictureUrl} alt={user.passengerName} />
+                        <div className="passenger-name-number">
+                          <span className="passenger-name">{user.passengerName}</span>
+                          <span className="passenger-number">{passengerNumber(user.passengerNumber) || '—'}</span>
+                        </div>
                       </div>
-                    </td>
-                    <td style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
-                      {passengerNumber(user.passengerNumber) || '—'}
-                    </td>
-                    <td style={{ fontSize: '0.85rem' }}>
-                      {user.phoneNumber || <span style={{ color: 'var(--text-muted)' }}>未綁定</span>}
                     </td>
                     <td>
                       <span className={accClass}>
@@ -360,9 +415,11 @@ export default function UserManager() {
                         {tripText}
                       </span>
                     </td>
-                    <td style={{ textAlign: 'center', fontWeight: user.noShowCount > 0 ? 700 : 500, color: user.noShowCount > 0 ? 'var(--color-danger)' : 'var(--text-secondary)' }}>
-                      {user.noShowCount} 次
-                    </td>
+                    {(['completedTripCount', 'cancelAfterAcceptCount', 'noShowCount'] as const).map(key => (
+                      <td className="passenger-count" key={key}>
+                        {countsLoading ? '…' : countsError ? '讀取失敗' : counts[user.userId]?.[key] ?? '—'}
+                      </td>
+                    ))}
                     <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                       {formatDate(user.createdAt)}
                     </td>

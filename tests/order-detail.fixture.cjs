@@ -4,7 +4,7 @@ window.adminReads=[];window.detailStatus='COMPLETED';window.detailDenied=false;w
 const originalFixtureFetch=window.fetch;
 window.fetch=async(url,init)=>{
  if(!String(url).endsWith('/webAdmin'))return originalFixtureFetch(url,init);
- const p=JSON.parse(init.body);adminReads.push(p);
+ const p=JSON.parse(init.body);if(p.action==='PASSENGER_COUNTS')return originalFixtureFetch(url,init);adminReads.push(p);
  if(window.listFailure===p.orderId)return {ok:false,status:503,json:async()=>({error:'快照讀取失敗'})};
  if(detailDenied)return {ok:false,status:403,json:async()=>({error:'此帳號沒有管理權限。'})};
  let body;

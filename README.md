@@ -1,10 +1,23 @@
 # LotusAH — Web 管理介面
 
+## 乘客列表與目前統計（11/15）
+
+- 姓名／編號合欄並保留頭像；姓名與編號各自可排序。搜尋姓名或完整外顯編號，保留前導零。電話欄／排序／搜尋退場，users.phoneNumber 預留欄位保持。
+- 完成搭乘／棄單／未出現由 webAdmin.PASSENGER_COUNTS 讀 `_dispatch_passenger_counts/{會員內碼}` 的 completedTripCount／cancelAfterAcceptCount／noShowCount。這是目前新核心累計，訂單與卡片仍讀當時快照。缺文件「—」、有效零值「0」、讀取中「…」、失敗明示並可重試。
+- 乘客名單沿既有 users 監聽；取得名單與重新整理時，按每批 100 人讀統計。統計集合不額外監聽；重新整理可取得最新值。姓名／編號、搜尋、篩選及每頁 10 人保留。換帳號、離頁及較新名單使舊回應失效。
+- 註冊時間固定 Asia/Taipei，格式 yyyy/MM/dd HH:mm:ss。窄版表格橫向捲動；帳號權限、叫車行程與管理操作維持後續討論。
+- 舊 User.noShowCount 與兩個元件的會員解碼已移除；新計數及訂單快照的同名 noShowCount 保留。操作／排序／畫面讀取狀態及 API 結果沿既有 sysLog，不上傳姓名或統計查詢名單。
+- 正式 build、完整乘客／訂單 Chrome fixture 與 390px 長姓名／橫捲／sysLog 通過；fixture 使用隔離 Auth／FS／HTTP。部署、資料清理與 Ready 人工驗收狀態見 root 交接。
+
 ## 乘客姓名統一（11/15）
 
 會員姓名唯一欄位為 `users.passengerName`；UserManager 的顯示／搜尋／排序／確認文字、OrderManager 的會員資料解碼、MarketingManager 的 USERS 回應／選擇器／發券確認皆對齊。COUPON_LEDGER 由 FF 回傳會員目前 passengerName；訂單列表／詳情保持 orders.passengerName 的當時快照。會員 name／displayName 相容分支在資料遷移後撤下。
 
-每次 LIFF 登入以驗證取得的有效 LINE 姓名更新會員，外顯 passengerNumber 固定；本批不修改電話、舊棄單次數、帳號／行程狀態、日期格式及管理操作。共用 loggedFirestore／adminApi 的 sysLog 白名單保持，不加入姓名內容。部署與 3 位正式會員資料轉換、真人驗收狀態見 Lotus root 最新交接。
+每次 LIFF 登入以驗證取得的有效 LINE 姓名更新會員，外顯 passengerNumber 固定；姓名批次已完成；後續乘客列表調整見頁首。共用 loggedFirestore／adminApi 的 sysLog 白名單保持，不加入姓名內容。部署與 3 位正式會員資料轉換、真人驗收狀態見 Lotus root 最新交接。
+
+## 訂單乘客姓名／編號獨立排序（11/15）
+
+訂單表頭沿用乘客列表的 passenger-heading：姓名與編號各自可點、箭頭跟隨作用中的欄位；姓名依 orders.passengerName 快照、編號依原乘客外碼對照表排序，保留字串前導零。切換欄位由升冪開始，同欄再點切降冪並回第一頁，沿 data-syslog 記錄控制項；車號司機仍在第二行。
 
 ## 訂單列表司機／搜尋 hotfix
 
@@ -44,7 +57,7 @@
 ## 11/13 乘客外顯編號
 
 - 乘客列表／排序／搜尋、訂單乘客資訊／搜尋、手動叫車乘客選單、發券選單／確認，以及優惠券結帳的乘客欄／搜尋，使用`passengerNumber`外顯字串；不在畫面顯示乘客內碼。
-- `src/lib/passengerNumber.ts`接受6～8碼、保留前導零，缺值或錯型別顯示「—」；編號搜尋採完整字串相等，姓名／電話等既有搜尋維持。
+- `src/lib/passengerNumber.ts`接受6～8碼、保留前導零，缺值或錯型別顯示「—」；乘客列表編號搜尋採完整字串相等、姓名部分比對；電話搜尋已於 11/15 退場，訂單列表編號部分比對見頁首 hotfix。
 - React key、option value、API payload、訂單及券關聯繼續使用內碼。訂單沿既有users監聽查表；發券USERS與COUPON_LEDGER由webAdmin追加唯讀passengerNumber，沿原會員讀取，不新增查詢或修改帳務。
 - Next.js16.2.12正式build與三套Chrome fixture通過：`tests/passenger-number.browser.cjs`、`coupon-manager.browser.cjs`、`coupon-settlement.browser.cjs`；後端22項Emulator通過。前導零／六七八碼精確搜尋／缺號／內碼操作保持均有驗證。測試資料隔離，未代操作正式發券／派車／結帳。
 - 發布與人工確認狀態見Lotus root交接及11/13日誌。
