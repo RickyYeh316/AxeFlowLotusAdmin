@@ -14,7 +14,7 @@ type Version = { seconds: number; nanoseconds: number };
 type Distribution = { state: 'PENDING' | 'FAILED' | 'COMPLETED'; issuedCount: number; skippedCount: number; lastError: string };
 type CouponRow = { id: string; type: number | null; title: string; description: string; discountAmount: number;
   status: string; startDate: string; endDate: string; expiresAtMillis: number | null; version: Version; notificationPreview?: string | null; distribution?: Distribution | null };
-type Passenger = { id: string; passengerNumber?: string; passengerName: string; phoneNumber: string; accountStatus: string; lineUid: string };
+type Passenger = { id: string; passengerNumber?: string; passengerName: string; accountStatus: string; lineUid: string };
 type Form = { type: number; title: string; description: string; discountAmount: string; startDate: string; endDate: string };
 type Request = Record<string, unknown>;
 const typeName = (type: number | null) => ({ 1: '新戶優惠券', 2: '活動優惠券', 3: '補償優惠券' }[type ?? 0] || '類型待確認');
@@ -142,7 +142,7 @@ export default function MarketingManager() {
   }), [rows, history, now, sort]);
   const pages = Math.max(1, Math.ceil(filtered.length / itemsPerPage)), currentPage = Math.min(page, pages);
   const disabled = busy || pending !== null;
-  const memberMatches = passengers.filter(p => `${p.passengerName} ${p.phoneNumber}`.toLowerCase().includes(search.trim().toLowerCase()) || passengerNumber(p.passengerNumber) === search.trim());
+  const memberMatches = passengers.filter(p => p.passengerName.toLowerCase().includes(search.trim().toLowerCase()) || passengerNumber(p.passengerNumber) === search.trim());
   const recipient = passengers.find(p => p.id === selected);
   const close = () => { if (!disabled) { setEditing(undefined); setIssuing(null); setError(''); } };
   const feedback = <>{error && <p role="alert" className="coupon-error">{error}</p>}{notice && <p role="status">{notice}</p>}
@@ -218,7 +218,7 @@ export default function MarketingManager() {
         <p className="coupon-help">{issuing.startDate} ～ {issuing.endDate}</p>
         {issuing.type === 2 ? <p className="coupon-help">每位正式有效乘客各一張；停權、已刪除與測試帳號略過。開始發券後的新戶不補發。此活動只能發一次，發出後不回收。<br />發券在背景處理，可關閉此頁。</p> : <>
         <p className="coupon-help">每次確認發送一張；同一乘客可再次獲得，發出後不回收。</p>
-        <label className="form-group">搜尋乘客<input className="form-input" value={search} disabled={disabled} onChange={e => setSearch(e.target.value)} placeholder="姓名、電話或乘客編號" /></label>
+        <label className="form-group">搜尋乘客<input className="form-input" value={search} disabled={disabled} onChange={e => setSearch(e.target.value)} placeholder="姓名或乘客編號" /></label>
         {membersLoading ? <p>載入乘客中…</p> : <label className="form-group">選擇乘客<select className="form-select" required value={selected} disabled={disabled} onChange={e => setSelected(e.target.value)}>
           <option value="">請選擇乘客</option>
           {recipient && !memberMatches.some(p => p.id === recipient.id) && <option value={recipient.id}>{recipient.passengerName} · {passengerNumber(recipient.passengerNumber) || '—'}（已選擇）</option>}

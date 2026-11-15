@@ -1,6 +1,7 @@
 'use client';
 
 import ListPagination from './ListPagination';
+import ArchiveMemberDialog from './ArchiveMemberDialog';
 
 import { passengerNumber } from '../lib/passengerNumber';
 
@@ -19,6 +20,7 @@ type PassengerCounts = { completedTripCount: number; cancelAfterAcceptCount: num
 type CurrentOrder = Pick<Order, 'status' | 'reservationState' | 'userId'>;
 type CurrentOrderRead = { order: CurrentOrder | null; failed: boolean };
 const validOrderId = (id: string) => !!id && !id.includes('/') && id !== '.' && id !== '..';
+const defaultPassengerAvatar = '/passenger-avatar-default.svg';
 
 export default function UserManager() {
   const [users, setUsers] = useState<User[]>([]);
@@ -32,6 +34,7 @@ export default function UserManager() {
   const [currentOrders, setCurrentOrders] = useState<{ key: string; items: Record<string, CurrentOrderRead> }>({ key: '', items: {} });
 
   const [statusBusy, setStatusBusy] = useState(false);
+  const [archiveTarget, setArchiveTarget] = useState<{ owner: string; userId: string; name: string; number: string } | null>(null);
   const statusFlight = useRef(false);
   const statusPending = useRef<{owner: string; userId: string; operationId: string; expectedStatus: string; accountStatus: string} | null>(null);
 
@@ -105,7 +108,7 @@ export default function UserManager() {
           passengerNumber: passengerNumber(data.passengerNumber),
           id: doc.id,
           passengerName: data.passengerName || '未設定名稱',
-          pictureUrl: data.pictureUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+          pictureUrl: typeof data.pictureUrl === 'string' ? data.pictureUrl.trim() : '',
           tripStatus: parsedTripStatus as UserTripStatus,
           currentOrderId: typeof data.currentOrderId === 'string' ? data.currentOrderId : undefined,
           accountStatus: parsedAccountStatus as UserAccountStatus,
@@ -218,7 +221,7 @@ export default function UserManager() {
 
   const handleToggleBan = async (user: User) => {
     const owner = auth.currentUser?.uid;
-    if (!owner || statusFlight.current) return;
+    if (!owner || statusFlight.current || archiveTarget) return;
     if (statusPending.current?.owner !== owner) statusPending.current = null;
     const pending = statusPending.current;
     if (pending && pending.userId !== user.userId) { alert('前一筆操作結果待確認，請先重試原乘客操作。'); return; }
@@ -424,7 +427,14 @@ export default function UserManager() {
                   <tr key={user.userId}>
                     <td>
                       <div className="passenger-identity">
-                        <img src={user.pictureUrl} alt={user.passengerName} />
+                        <img
+                          src={user.pictureUrl || defaultPassengerAvatar}
+                          alt={user.passengerName}
+                          onError={event => {
+                            const image = event.currentTarget;
+                            if (image.getAttribute('src') !== defaultPassengerAvatar) image.src = defaultPassengerAvatar;
+                          }}
+                        />
                         <div className="passenger-name-number">
                           <span className="passenger-name">{user.passengerName}</span>
                           <span className="passenger-number">{passengerNumber(user.passengerNumber) || '—'}</span>
@@ -450,15 +460,25 @@ export default function UserManager() {
                       {formatDate(user.createdAt)}
                     </td>
                     <td>
+                      {user.accountStatus === UserAccountStatus.DELETED ? '—' : <div style={{ display: 'flex', gap: 8 }}>
                       <button 
                         onClick={() => handleToggleBan(user)}
                         data-syslog="users.accountStatus.toggle"
-                        disabled={statusBusy || (statusPending.current?.owner === auth.currentUser?.uid && statusPending.current?.userId !== user.userId) || ![UserAccountStatus.ACTIVE, UserAccountStatus.BANNED].includes(user.accountStatus)}
+                        disabled={!!archiveTarget || statusBusy || (statusPending.current?.owner === auth.currentUser?.uid && statusPending.current?.userId !== user.userId) || ![UserAccountStatus.ACTIVE, UserAccountStatus.BANNED].includes(user.accountStatus)}
                         className="btn-secondary table-action-button"
                         title={statusPending.current?.userId === user.userId ? '重試確認上一筆帳號操作' : user.accountStatus === UserAccountStatus.BANNED ? '啟用帳號' : '停用帳號'}
                       >
                         {user.accountStatus === UserAccountStatus.BANNED ? '啟用' : '停用'}
                       </button>
+                      <button className="btn-secondary table-action-button" data-syslog="users.archive.open"
+                        disabled={!!archiveTarget || statusBusy || (statusPending.current?.owner === auth.currentUser?.uid) || ![UserAccountStatus.ACTIVE, UserAccountStatus.BANNED].includes(user.accountStatus)}
+                        onClick={() => {
+                          const owner = auth.currentUser?.uid;
+                          if (owner && !statusFlight.current && statusPending.current?.owner !== owner) {
+                            setArchiveTarget({ owner, userId: user.userId, name: user.passengerName || '未提供姓名', number: passengerNumber(user.passengerNumber) || '—' });
+                          }
+                        }}>封存</button>
+                      </div>}
                     </td>
                   </tr>
                 );
@@ -470,6 +490,7 @@ export default function UserManager() {
             onPageChange={setCurrentPage} onPageSizeChange={setItemsPerPage} />
         </div>
       )}
+      {archiveTarget && <ArchiveMemberDialog target={archiveTarget} onClose={() => setArchiveTarget(null)} />}
     </div>
   );
 }

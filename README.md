@@ -1,5 +1,19 @@
 # LotusAH — Web 管理介面
 
+## 會員封存（11/15）
+
+UserManager 對 ACTIVE／BANNED 提供「封存」，沿看詳細的 table-action-button；DELETED 顯示已封存與操作「—」。ArchiveMemberDialog 顯示姓名／編號、不可逆及重新註冊說明，焦點置於標題。精確讀取會員版本後呼叫既有 DELETE_MEMBER；後端與未完成訂單系統取消、解除 LINE mapping 同交易提交。結果不明保留原會員／版本供重試，忙碌及待確認時阻擋取消；切換管理員關閉視窗並隔離晚到回應。
+
+Chrome fixture 驗證確認／取消、連點防重、結果不明原版本重試、過期版本拒絕、已封存無操作、管理員切換及 390px 版面；正式 build 通過。Ready 改以 908841 手動封存，LIFF 失效回收後重試登入建立新會員 387147，回報 TEST PASS；部署版本及驗證範圍見 Lotus root 最新交接。
+
+## 乘客電話欄位退場
+
+會員 User／Passenger 型別移除 phoneNumber；webAdmin.USERS 不再回傳。優惠券發券選擇器搜尋姓名（不分大小寫）或完整乘客編號，保留前導零，提示為「姓名或乘客編號」。司機聯絡電話與會員登入身分防護維持各自契約；部署與正式資料清理見 root 交接。
+
+## 乘客預設頭像
+
+UserManager 對 pictureUrl 缺值／空白及載入失敗使用 public/passenger-avatar-default.svg（淺藍圓底、白色人形輪廓）；有效照片維持。預設圖只用於 UI，不寫入 Firestore，移除舊 Unsplash 真人照片 fallback。既有 Chrome fixture 驗證缺值、404 及網址更新後恢復；發布／人工驗收見 root 交接。
+
 ## 列表分頁與優惠券文案（11/15）
 
 訂單、乘客、優惠券管理與優惠券結帳共用 `ListPagination`，沿訂單既有樣式顯示筆數範圍／總筆數、每頁 10／20／50／100 筆、上一頁／頁碼／下一頁。只有一頁仍顯示整組元件，前後頁停用；改每頁筆數回第一頁，頁碼隨篩選後總筆數收斂。零筆維持既有空清單提示。分頁在目前載入／篩選的結果上進行，優惠券結帳合計仍涵蓋全部符合條件資料。
@@ -31,7 +45,7 @@ UserManager 以 accountStatus 精確顯示 ACTIVE正常啟用／BANNED已停權�
 
 ## 乘客列表與目前統計（11/15）
 
-- 姓名／編號合欄並保留頭像；姓名與編號各自可排序。搜尋姓名或完整外顯編號，保留前導零。電話欄／排序／搜尋退場，users.phoneNumber 預留欄位保持。
+- 姓名／編號合欄並保留頭像；姓名與編號各自可排序。搜尋姓名或完整外顯編號，保留前導零。電話欄／排序／搜尋退場，users.phoneNumber 已退場。
 - 完成搭乘／棄單／未出現由 webAdmin.PASSENGER_COUNTS 讀 `_dispatch_passenger_counts/{會員內碼}` 的 completedTripCount／cancelAfterAcceptCount／noShowCount。這是目前新核心累計，訂單與卡片仍讀當時快照。缺文件「—」、有效零值「0」、讀取中「…」、失敗明示並可重試。
 - 乘客名單沿既有 users 監聽；取得名單與重新整理時，按每批 100 人讀統計。統計集合不額外監聽；重新整理可取得最新值。姓名／編號、搜尋、篩選及每頁 10 人保留。換帳號、離頁及較新名單使舊回應失效。
 - 註冊時間固定 Asia/Taipei，格式 yyyy/MM/dd HH:mm:ss。窄版表格橫向捲動；當前訂單接線見頁首，帳號權限與管理操作見頁首。

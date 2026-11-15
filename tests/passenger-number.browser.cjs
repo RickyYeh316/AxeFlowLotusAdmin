@@ -38,7 +38,7 @@ export const addDoc=()=>{throw Error('Unexpected write')};export const updateDoc
 export const doc=(_db,...parts)=>({path:parts.join('/'),id:parts.at(-1)});export const serverTimestamp=()=>null;
 `);
 const fixture = `
-window.cancelWrites=[];window.cancelUncertain=false;window.cancelStale=false;window.cancelHold=false;window.cancelApplied=new Set();window.countReads=[];window.countOffset=0;window.countsFailure=false;window.holdCounts=false;window.heldCounts=[];
+window.archiveWrites=[];window.archiveUncertain=false;window.archiveStale=false;window.archiveHold=false;window.archiveVersion={seconds:123,nanoseconds:456};window.cancelWrites=[];window.cancelUncertain=false;window.cancelStale=false;window.cancelHold=false;window.cancelApplied=new Set();window.countReads=[];window.countOffset=0;window.countsFailure=false;window.holdCounts=false;window.heldCounts=[];
 window.confirm=()=>false;window.alerts=[];window.alert=m=>alerts.push(m);window.statusWrites=[];window.statusUncertain=false;window.uploadedLogs=[];window.fetch=async(url,init)=>{
  if(String(url).endsWith('/webAdmin')){
   const body=JSON.parse(init.body);
@@ -50,6 +50,15 @@ window.confirm=()=>false;window.alerts=[];window.alert=m=>alerts.push(m);window.
     const order=fixture.orders.find(o=>o.id===body.orderId);if(order){order.data.status='CANCELLED_BY_SYSTEM';reemitOrders();}
     if(cancelUncertain)return {ok:false,status:503,json:async()=>({error:'操作結果待確認'})};
     return {ok:true,status:200,json:async()=>({status:'CANCELLED_BY_SYSTEM',duplicate})};
+  }
+  if(body.action==='USERS')return {ok:true,status:200,json:async()=>({items:fixture.users.filter(u=>u.id===body.userId).map(u=>({id:u.id,accountStatus:u.data.accountStatus,version:archiveVersion}))})};
+  if(body.action==='DELETE_MEMBER'){
+    archiveWrites.push(body);
+    if(archiveHold)await new Promise(r=>window.releaseArchive=r);
+    if(archiveStale)return {ok:false,status:409,json:async()=>({error:'會員資料已更新，請重新整理後再操作。'})};
+    fixture.users.find(u=>u.id===body.userId).data.accountStatus='DELETED';reemitUsers();
+    if(archiveUncertain)return {ok:false,status:503,json:async()=>({error:'封存結果待確認'})};
+    return {ok:true,status:200,json:async()=>({deleted:true,userId:body.userId})};
   }
   if(body.action==='SET_MEMBER_STATUS'){
     statusWrites.push(body);if(statusUncertain)return {ok:false,status:503,json:async()=>({error:'操作結果待確認'})};
@@ -66,7 +75,7 @@ window.confirm=()=>false;window.alerts=[];window.alert=m=>alerts.push(m);window.
  }
 if(String(url).endsWith('/uploadSystemLogs')){const b=JSON.parse(init.body);window.uploadedLogs.push(b);return {ok:true,json:async()=>({batchId:b.batchId,accepted:b.events.length})}}throw Error('Unexpected network')};
 const numbers=['000123','123456','0123456','00001234',null];
-window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{passengerName:'乘客'+i,passengerNumber:number,tripStatus:'IDLE',accountStatus:'ACTIVE',phoneNumber:'0999000000',createdAt:{toDate:()=>new Date('2026-11-13T00:00:00Z')},updatedAt:{toDate:()=>new Date('2026-11-13T00:00:00Z')}}})),drivers:[],orders:numbers.map((_,i)=>({id:'order-private-'+i,data:{userId:'MEMBER-private-'+i,passengerId:'MEMBER-private-'+i,passengerName:'乘客'+i,readableId:'8'+String(i).padStart(5,'0'),status:'COMPLETED',isScheduled:i===1,isElderlyCare:i===1,couponId:i===1?'coupon-1':'',pickupLocation:i===0?{lat:23.991,lng:121.601}:undefined,destination:i===1?{lat:24.01,lng:121.62}:i===2?{lat:91,lng:121}:i===3?{lat:24,lng:'121'}:undefined,driverName:i===0?'測試司機':'',carPlate:i===0?'TEA-5596':'',startAddress:i===0?'花蓮縣花蓮市富裕二街30-1號':'花蓮',endAddress:i===0?'':'花蓮縣新城鄉北埔路415-1號',createdAt:{toDate:()=>new Date('2026-11-13T00:00:00Z')},updatedAt:{toDate:()=>new Date('2026-11-13T00:00:00Z')}}}))};
+window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{passengerName:'乘客'+i,passengerNumber:number,tripStatus:'IDLE',accountStatus:'ACTIVE',createdAt:{toDate:()=>new Date('2026-11-13T00:00:00Z')},updatedAt:{toDate:()=>new Date('2026-11-13T00:00:00Z')}}})),drivers:[],orders:numbers.map((_,i)=>({id:'order-private-'+i,data:{userId:'MEMBER-private-'+i,passengerId:'MEMBER-private-'+i,passengerName:'乘客'+i,readableId:'8'+String(i).padStart(5,'0'),status:'COMPLETED',isScheduled:i===1,isElderlyCare:i===1,couponId:i===1?'coupon-1':'',pickupLocation:i===0?{lat:23.991,lng:121.601}:undefined,destination:i===1?{lat:24.01,lng:121.62}:i===2?{lat:91,lng:121}:i===3?{lat:24,lng:'121'}:undefined,driverName:i===0?'測試司機':'',carPlate:i===0?'TEA-5596':'',startAddress:i===0?'花蓮縣花蓮市富裕二街30-1號':'花蓮',endAddress:i===0?'':'花蓮縣新城鄉北埔路415-1號',createdAt:{toDate:()=>new Date('2026-11-13T00:00:00Z')},updatedAt:{toDate:()=>new Date('2026-11-13T00:00:00Z')}}}))};
 `;
 (async () => {
   await new Promise((resolve,reject)=>webpack({mode:'production',plugins:[new webpack.DefinePlugin({'process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY':JSON.stringify('fixture-maps-key')})],entry,output:{path:temp,filename:'bundle.js'},
@@ -76,6 +85,8 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
   const server = http.createServer((req,res)=>{
     if(req.url==='/bundle.js'){res.setHeader('Content-Type','text/javascript');res.end(fs.readFileSync(path.join(temp,'bundle.js')));}
     else if(req.url==='/style.css'){res.setHeader('Content-Type','text/css');res.end(fs.readFileSync(path.join(root,'.next/static/chunks',cssFile)));}
+    else if(req.url==='/passenger-avatar-default.svg'||req.url==='/fixture-avatar.svg'){res.setHeader('Content-Type','image/svg+xml');res.end(fs.readFileSync(path.join(root,'public/passenger-avatar-default.svg')));}
+    else if(req.url==='/missing-avatar.png'){res.statusCode=404;res.end();}
     else if(req.url.startsWith('/passenger-order/')){
       const name=req.url.split('?')[0],file=path.join(root,'public',name);
       if(!file.startsWith(path.join(root,'public/passenger-order/'))||!fs.existsSync(file)){res.statusCode=404;res.end();return;}
@@ -106,6 +117,14 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     await send('Emulation.setTimezoneOverride',{timezoneId:'America/Los_Angeles'});
     await send('Page.navigate',{url:`http://127.0.0.1:${server.address().port}`});
     await wait(`document.querySelectorAll('tbody tr').length===5`);
+    // 缺值、空白、無效型別及載入失敗皆顯示本機預設頭像；新網址可恢復。
+    await run(`fixture.users.forEach((u,i)=>{u.data.pictureUrl=[undefined,'','  ',42,'/missing-avatar.png'][i]});reemitUsers()`);
+    await wait(`[...document.querySelectorAll('.passenger-identity img')].every(i=>i.getAttribute('src')==='/passenger-avatar-default.svg'&&i.complete&&i.naturalWidth>0)`);
+    await run(`fixture.users[4].data.pictureUrl='/fixture-avatar.svg';reemitUsers()`);
+    await wait(`document.querySelector('img[alt="乘客4"]')?.getAttribute('src')==='/fixture-avatar.svg'&&document.querySelector('img[alt="乘客4"]').naturalWidth>0`);
+    await run(`fixture.users[4].data.pictureUrl='';reemitUsers()`);
+    await wait(`document.querySelector('img[alt="乘客4"]')?.getAttribute('src')==='/passenger-avatar-default.svg'`);
+    console.log('PASS: 乘客頭像缺值／空白／無效型別／404轉本機SVG，有效新網址恢復，清空後回預設圖。');
     for (const size of ['100', '20', '50', '10']) {
       await fill('[aria-label="每頁顯示筆數"]', size);
       await wait(`document.querySelector('[aria-label="每頁顯示筆數"]')?.value==='${size}'`);
@@ -227,7 +246,7 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
     await run(`fixture.users[1].data.accountStatus='DELETED';fixture.users[2].data.accountStatus='UNKNOWN';reemitUsers()`);
     await wait(`document.querySelector('tbody').textContent.includes('已封存')`);
-    assert.equal(await run(`document.querySelectorAll('tbody button[data-syslog="users.accountStatus.toggle"]:disabled').length`),2);
+    assert.equal(await run(`document.querySelectorAll('tbody button[data-syslog="users.accountStatus.toggle"]:disabled').length`),1);
     await run(`window.confirm=()=>true;statusUncertain=true;document.querySelector('tbody button[data-syslog="users.accountStatus.toggle"]').click()`);
     await wait(`alerts.length===1`);
     await wait(`document.querySelector('button[title="重試確認上一筆帳號操作"]')?.disabled===false`);
@@ -239,6 +258,40 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     assert.equal(await run(`statusWrites[2].expectedStatus`),'BANNED');
     await run(`fixture.users.forEach(u=>u.data.accountStatus='ACTIVE');reemitUsers();window.confirm=()=>false`);
     console.log('PASS: 管理停權透過API、結果不確定同請求重送、解除停權、DELETED／未知值停用操作。');
+    await run(`document.querySelector('[data-syslog="users.archive.open"]').click()`);
+    await wait(`document.querySelector('[data-syslog="users.archive.confirm"]')?.disabled===false`);
+    assert.equal(await run(`document.activeElement.id`),'member-archive-title');
+    assert.equal(await run(`document.querySelector('dialog').textContent.includes('無法恢復')`),true);
+    await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:false});
+    assert.equal(await run(`(()=>{const r=document.querySelector('dialog').getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight})()`),true);
+    fs.writeFileSync(path.join(temp,'archive-mobile.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+    await run(`document.querySelector('[data-syslog="users.archive.cancel"]').click()`);
+    assert.equal(await run(`archiveWrites.length`),0);
+    await run(`document.querySelector('[data-syslog="users.archive.open"]').click()`);
+    await wait(`document.querySelector('[data-syslog="users.archive.confirm"]')?.disabled===false`);
+    await run(`archiveUncertain=true;archiveHold=true;document.querySelector('[data-syslog="users.archive.confirm"]').click();document.querySelector('[data-syslog="users.archive.confirm"]').click()`);
+    await wait(`archiveWrites.length===1&&!!releaseArchive`);
+    assert.equal(await run(`document.querySelector('[data-syslog="users.archive.cancel"]').disabled`),true);
+    await run(`archiveHold=false;releaseArchive()`);
+    await wait(`document.querySelector('[data-syslog="users.archive.confirm"]')?.textContent==='重試封存'`);
+    assert.equal(await run(`document.querySelector('[data-syslog="users.archive.cancel"]').disabled`),true);
+    await run(`archiveUncertain=false;archiveVersion={seconds:999,nanoseconds:1};document.querySelector('[data-syslog="users.archive.confirm"]').click()`);
+    await wait(`!document.querySelector('dialog')`);
+    assert.deepEqual(await run(`archiveWrites[0]`),await run(`archiveWrites[1]`),'結果不明保持原會員與版本，已封存仍能確認結果');
+    assert.equal(await run(`Array.from(document.querySelectorAll('tbody tr')).find(r=>r.textContent.includes('乘客0')).lastElementChild.textContent`),'—');
+    await run(`document.querySelector('[data-syslog="users.archive.open"]').click()`);
+    await wait(`document.querySelector('[data-syslog="users.archive.confirm"]')?.disabled===false`);
+    await run(`archiveStale=true;document.querySelector('[data-syslog="users.archive.confirm"]').click()`);
+    await wait(`document.querySelector('dialog [role="alert"]')?.textContent.includes('已更新')`);
+    assert.equal(await run(`document.querySelector('[data-syslog="users.archive.confirm"]').disabled`),true);
+    await run(`document.querySelector('[data-syslog="users.archive.cancel"]').click();archiveStale=false;fixture.users.forEach(u=>u.data.accountStatus='ACTIVE');reemitUsers()`);
+    await run(`document.querySelector('[data-syslog="users.archive.open"]').click()`);
+    await wait(`document.querySelector('[data-syslog="users.archive.confirm"]')?.disabled===false`);
+    await run(`changeUser('archive-other-admin')`);await wait(`!document.querySelector('dialog')`);
+    assert.equal(await run(`archiveWrites.length`),3);
+    await run(`changeUser('test-admin');document.querySelector('[data-syslog="users.retry"]').click()`);await wait(`document.querySelectorAll('tbody tr').length===5`);
+    console.log('PASS: 封存確認／取消不寫入、雙擊單請求、原版本重試、已封存無操作、過期版本明示。');
     await run(`showView('orders')`);await wait(`document.querySelector('[data-syslog="order.filter.serving"]')?.getAttribute('aria-pressed')==='true'`);await run(`document.querySelector('[data-syslog="order.filter.all"]').click()`);await wait(`document.querySelectorAll('tbody tr').length===5`);
     assert.equal(await run(`document.querySelector('tbody').textContent.includes('MEMBER-private')`),false);
     await run(`fixture.orders[0].data.status='CANCELLED_BY_SYSTEM';reemitOrders()`);

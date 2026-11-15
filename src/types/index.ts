@@ -89,7 +89,6 @@ export interface User {
   passengerName: string; // 會員目前姓名；訂單另存建單時快照
   tripStatus: UserTripStatus;
   accountStatus: UserAccountStatus;
-  phoneNumber?: string;
   currentOrderId?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
