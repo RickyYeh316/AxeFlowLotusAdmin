@@ -9,9 +9,14 @@ import { Search, ChevronUp, ChevronDown, Ban, CheckCircle, RefreshCw } from 'luc
 import { onAuthStateChanged } from 'firebase/auth';
 import { adminApi } from '../lib/adminApi';
 import { recordSystemLog } from '../lib/systemLogs/client';
-import { User, UserTripStatus, UserAccountStatus } from '../types';
+import { User, UserTripStatus, UserAccountStatus, Order } from '../types';
+import { orderGroup, orderStatusText } from '../lib/orderPresentation';
 
 type PassengerCounts = { completedTripCount: number; cancelAfterAcceptCount: number; noShowCount: number };
+
+type CurrentOrder = Pick<Order, 'status' | 'reservationState' | 'userId'>;
+type CurrentOrderRead = { order: CurrentOrder | null; failed: boolean };
+const validOrderId = (id: string) => !!id && !id.includes('/') && id !== '.' && id !== '..';
 
 export default function UserManager() {
   const [users, setUsers] = useState<User[]>([]);
@@ -22,6 +27,7 @@ export default function UserManager() {
   const [countsLoading, setCountsLoading] = useState(true);
   const [countsError, setCountsError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
+  const [currentOrders, setCurrentOrders] = useState<{ key: string; items: Record<string, CurrentOrderRead> }>({ key: '', items: {} });
 
   // Sorting State
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'ascending' | 'descending' } | null>({
@@ -47,6 +53,7 @@ export default function UserManager() {
       if (active && user?.uid !== owner) {
         active = false;
         setUsers([]); setCounts({}); setCountsLoading(false); setCountsError(''); setLoading(false);
+        setCurrentOrders({ key: '', items: {} });
         setLoadError('登入身分已變更，請重新開啟頁面。');
       }
     });
@@ -101,6 +108,7 @@ export default function UserManager() {
           passengerName: data.passengerName || '未設定名稱',
           pictureUrl: data.pictureUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
           tripStatus: parsedTripStatus as UserTripStatus,
+          currentOrderId: typeof data.currentOrderId === 'string' ? data.currentOrderId : undefined,
           accountStatus: parsedAccountStatus as UserAccountStatus,
           createdAt: data.createdAt,
           updatedAt: data.updatedAt
@@ -119,11 +127,63 @@ export default function UserManager() {
     return () => { active = false; revision++; stopAuth(); unsub(); };
   }, [reloadKey]);
 
+  // Only follow the explicit current link; never query a passenger's latest/history order.
+  const currentOrderKey = useMemo(() => JSON.stringify([reloadKey,
+    users.map(user => [user.userId, user.currentOrderId || '']).sort()]), [users, reloadKey]);
   useEffect(() => {
-    recordSystemLog('SCREEN_STATE', { screen: 'users', loading: loading || countsLoading,
-      count: users.length, enabled: !loadError && !countsError,
-      ...(loadError || countsError ? { reason: 'READ_FAILED' } : {}) });
-  }, [loading, countsLoading, loadError, countsError, users.length]);
+    let active = true;
+    const owner = auth.currentUser?.uid;
+    const [, links] = JSON.parse(currentOrderKey) as [number, [string, string][]];
+    const ids = [...new Set(links.map(([, id]) => id).filter(validOrderId))];
+    setCurrentOrders({ key: currentOrderKey, items: {} });
+    const stops = ids.map(id => {
+      let signature = '';
+      return onSnapshot(doc(db, 'orders', id), snapshot => {
+        if (!active || auth.currentUser?.uid !== owner) return;
+        const data = snapshot.data();
+        const order = data ? { userId: data.userId, status: data.status, reservationState: data.reservationState } as CurrentOrder : null;
+        setCurrentOrders(previous => previous.key === currentOrderKey
+          ? { key: currentOrderKey, items: { ...previous.items, [id]: { order, failed: false } } } : previous);
+        const next = JSON.stringify(order);
+        if (signature !== next) {
+          signature = next;
+          recordSystemLog('ENTITY_STATE', { screen: 'users', orderId: id, orderStatus: order?.status,
+            status: order?.reservationState, visible: !!order, reason: 'CURRENT_ORDER' });
+        }
+      }, () => {
+        if (!active || auth.currentUser?.uid !== owner) return;
+        setCurrentOrders(previous => previous.key === currentOrderKey
+          ? { key: currentOrderKey, items: { ...previous.items, [id]: { order: null, failed: true } } } : previous);
+      });
+    });
+    return () => { active = false; stops.forEach(stop => stop()); };
+  }, [currentOrderKey]);
+
+  const currentOrderViews = useMemo(() => new Map(users.map(user => {
+    const id = user.currentOrderId;
+    const read = currentOrders.key === currentOrderKey ? currentOrders.items[id || ''] : undefined;
+    let group = 'none', label = '—';
+    if (id) {
+      if (!validOrderId(id)) { group = 'unknown'; label = '訂單狀態待確認'; }
+      else if (!read) { group = 'loading'; label = '…'; }
+      else if (read.failed) { group = 'error'; label = '讀取失敗'; }
+      else if (!read.order || read.order.userId !== user.userId) { group = 'unknown'; label = '訂單狀態待確認'; }
+      else {
+        const category = orderGroup(read.order);
+        // A terminal snapshot can arrive before the user-link removal notification.
+        if (category !== 'closed') { group = category; label = orderStatusText(read.order); }
+      }
+    }
+    return [user.userId, { group, label }];
+  })), [users, currentOrders, currentOrderKey]);
+  const ordersLoading = [...currentOrderViews.values()].some(view => view.group === 'loading');
+  const ordersError = [...currentOrderViews.values()].some(view => view.group === 'error');
+
+  useEffect(() => {
+    recordSystemLog('SCREEN_STATE', { screen: 'users', loading: loading || countsLoading || ordersLoading,
+      count: users.length, enabled: !loadError && !countsError && !ordersError,
+      ...(loadError || countsError || ordersError ? { reason: 'READ_FAILED' } : {}) });
+  }, [loading, countsLoading, ordersLoading, loadError, countsError, ordersError, users.length]);
 
   const formatDate = (timestamp: any) => {
     if (!timestamp) return '未記錄';
@@ -136,7 +196,7 @@ export default function UserManager() {
 
   // Filtering States
   const [accountFilter, setAccountFilter] = useState<string>('ALL');
-  const [tripFilter, setTripFilter] = useState<string>('ALL');
+  const [currentOrderFilter, setCurrentOrderFilter] = useState<string>('ALL');
 
   // Filter users based on search & status
   const filteredUsers = useMemo(() => {
@@ -151,18 +211,11 @@ export default function UserManager() {
         matchesAccount = user.accountStatus === accountFilter;
       }
 
-      let matchesTrip = true;
-      if (tripFilter !== 'ALL') {
-        if (tripFilter === 'IN_TRIP') {
-          matchesTrip = user.tripStatus === UserTripStatus.IN_TRIP || user.tripStatus === UserTripStatus.REQUESTING;
-        } else {
-          matchesTrip = user.tripStatus === tripFilter;
-        }
-      }
-
-      return matchesSearch && matchesAccount && matchesTrip;
+      const matchesCurrentOrder = currentOrderFilter === 'ALL'
+        || currentOrderViews.get(user.userId)?.group === currentOrderFilter;
+      return matchesSearch && matchesAccount && matchesCurrentOrder;
     });
-  }, [users, searchQuery, accountFilter, tripFilter]);
+  }, [users, searchQuery, accountFilter, currentOrderFilter, currentOrderViews]);
 
   const handleToggleBan = async (user: User) => {
     const isBanned = user.accountStatus === UserAccountStatus.BANNED;
@@ -208,6 +261,10 @@ export default function UserManager() {
       sortable.sort((a: any, b: any) => {
         let aVal = a[sortConfig.key];
         let bVal = b[sortConfig.key];
+        if (sortConfig.key === 'currentOrder') {
+          aVal = currentOrderViews.get(a.userId)?.label || '';
+          bVal = currentOrderViews.get(b.userId)?.label || '';
+        }
 
         if (sortConfig.key === 'createdAt' || sortConfig.key === 'lastLoginAt') {
           aVal = aVal?.toDate ? aVal.toDate().getTime() : new Date(aVal || 0).getTime();
@@ -226,9 +283,10 @@ export default function UserManager() {
       });
     }
     return sortable;
-  }, [filteredUsers, sortConfig]);
+  }, [filteredUsers, sortConfig, currentOrderViews]);
 
   const totalPages = Math.ceil(sortedUsers.length / itemsPerPage);
+  useEffect(() => { setCurrentPage(page => Math.min(page, Math.max(1, totalPages))); }, [totalPages]);
   const paginatedUsers = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
     return sortedUsers.slice(start, start + itemsPerPage);
@@ -307,12 +365,13 @@ export default function UserManager() {
             </select>
           </div>
 
-          {/* Trip Status Filter */}
+          {/* Current Order Filter */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-            <span>行程狀態:</span>
+            <span>當前訂單:</span>
             <select 
-              value={tripFilter}
-              onChange={(e) => { setTripFilter(e.target.value); setCurrentPage(1); }}
+              value={currentOrderFilter}
+              data-syslog="users.currentOrder.filter"
+              onChange={(e) => { setCurrentOrderFilter(e.target.value); setCurrentPage(1); }}
               style={{
                 background: 'rgba(255, 255, 255, 0.03)',
                 border: '1px solid var(--border-color)',
@@ -324,9 +383,11 @@ export default function UserManager() {
                 cursor: 'pointer'
               }}
             >
-              <option value="ALL" style={{ background: '#0c0d14' }}>全部行程狀態</option>
-              <option value="IDLE" style={{ background: '#0c0d14' }}>正常空閒 (IDLE)</option>
-              <option value="IN_TRIP" style={{ background: '#0c0d14' }}>叫車行程中 (REQUESTING/IN_TRIP)</option>
+              <option value="ALL" style={{ background: '#0c0d14' }}>全部當前訂單</option>
+              <option value="none" style={{ background: '#0c0d14' }}>無當前訂單</option>
+              <option value="serving" style={{ background: '#0c0d14' }}>服務中</option>
+              <option value="waiting" style={{ background: '#0c0d14' }}>待處理</option>
+              <option value="unknown" style={{ background: '#0c0d14' }}>狀態待確認</option>
             </select>
           </div>
 
@@ -340,21 +401,21 @@ export default function UserManager() {
               className="search-input"
             />
           </div>
-          <button className="btn-secondary" data-syslog="users.reload" onClick={() => setReloadKey(key => key + 1)} disabled={loading || countsLoading}>
+          <button className="btn-secondary" data-syslog="users.reload" onClick={() => setReloadKey(key => key + 1)} disabled={loading || countsLoading || ordersLoading}>
             <RefreshCw size={16} /> 重新整理
           </button>
         </div>
       </div>
 
-      {(loadError || countsError) && <div role="alert" className="passenger-read-error">
-        <span>{loadError || `乘客統計讀取失敗：${countsError}`}</span>
+      {(loadError || countsError || ordersError) && <div role="alert" className="passenger-read-error">
+        <span>{loadError || (countsError ? `乘客統計讀取失敗：${countsError}` : '當前訂單讀取失敗，請重試。')}</span>
         <button className="btn-secondary" data-syslog="users.retry" onClick={() => setReloadKey(key => key + 1)}>重試</button>
       </div>}
       {loading ? (
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>載入乘客名單中...</div>
       ) : filteredUsers.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-          {searchQuery || accountFilter !== 'ALL' || tripFilter !== 'ALL' ? '找不到符合篩選條件的乘客。' : '目前尚無註冊乘客。'}
+          {searchQuery || accountFilter !== 'ALL' || currentOrderFilter !== 'ALL' ? '找不到符合篩選條件的乘客。' : '目前尚無註冊乘客。'}
         </div>
       ) : (
         <div className="admin-table-container">
@@ -367,7 +428,7 @@ export default function UserManager() {
                   <button data-syslog="users.sort.number" onClick={() => requestSort('passengerNumber')}>編號{getSortIcon('passengerNumber')}</button>
                 </div></th>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('accountStatus')}>帳號權限 {getSortIcon('accountStatus')}</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('tripStatus')}>叫車行程 {getSortIcon('tripStatus')}</th>
+                <th><button className="coupon-sort" data-syslog="users.sort.currentOrder" onClick={() => requestSort('currentOrder')}>當前訂單 {getSortIcon('currentOrder')}</button></th>
                 <th className="passenger-count">完成搭乘</th>
                 <th className="passenger-count">棄單</th>
                 <th className="passenger-count">未出現</th>
@@ -384,15 +445,7 @@ export default function UserManager() {
                   accClass = 'status-pill offline';
                 }
 
-                let tripText = '正常空閒';
-                let tripClass = 'status-pill online';
-                if (user.tripStatus === UserTripStatus.IN_TRIP) {
-                  tripText = '行程中';
-                  tripClass = 'status-pill busy';
-                } else if (user.tripStatus === UserTripStatus.REQUESTING) {
-                  tripText = '媒合中';
-                  tripClass = 'status-pill busy';
-                }
+                const currentOrder = currentOrderViews.get(user.userId)!;
 
                 return (
                   <tr key={user.userId}>
@@ -410,10 +463,10 @@ export default function UserManager() {
                         {accText}
                       </span>
                     </td>
-                    <td>
-                      <span className={tripClass}>
-                        {tripText}
-                      </span>
+                    <td className="passenger-current-order">
+                      {['serving', 'waiting', 'unknown'].includes(currentOrder.group)
+                        ? <span className={`status-pill order-status order-tone-${currentOrder.group}`}>{currentOrder.label}</span>
+                        : currentOrder.label}
                     </td>
                     {(['completedTripCount', 'cancelAfterAcceptCount', 'noShowCount'] as const).map(key => (
                       <td className="passenger-count" key={key}>

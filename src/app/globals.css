@@ -1129,7 +1129,7 @@ body.modal-open .workspace-tabs-bar {
 .order-detail-dialog iframe {width:100%;flex:1;min-height:0;border:0;background:#10151e}
 @media(max-width:600px) {.order-detail-dialog{width:100vw;height:100dvh;border-radius:0}}
 
-/* 訂單分類與卡片框色一致；只限訂單列表，保持結帳頁與其他頁原樣。 */
+/* 訂單分類與卡片框色一致；訂單列表與乘客當前訂單共用，結帳頁保持。 */
 .order-status-toolbar {display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center}
 .order-tone-serving {--order-tone:#66b292;--order-tint:#66b29218}
 .order-tone-waiting {--order-tone:#d6b35c;--order-tint:#d6b35c18}
@@ -1138,7 +1138,7 @@ body.modal-open .workspace-tabs-bar {
 .order-filter.category-pill {color:var(--order-tone);border-color:var(--order-tone);background:transparent;box-shadow:none}
 .order-filter.category-pill:hover {background:var(--order-tint)}
 .order-filter.category-pill.active {color:#10151e;background:var(--order-tone);border-color:var(--order-tone);box-shadow:none}
-.order-table .order-status {color:var(--order-tone);border:1px solid var(--order-tone);background:var(--order-tint);line-height:1.6;white-space:normal}
+.order-table .order-status, .passenger-current-order .order-status {color:var(--order-tone);border:1px solid var(--order-tone);background:var(--order-tint);line-height:1.6;white-space:normal}
 
 .order-status-toolbar > .btn-secondary {display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
 

@@ -1,11 +1,19 @@
 # LotusAH — Web 管理介面
 
+## 乘客當前訂單（11/15）
+
+- 乘客列表「叫車行程」改為「當前訂單」，只跟隨 users.currentOrderId；逐份監聽對應 orders 文件，核對 userId，不查最新或歷史訂單。名單的關聯改變／重新整理時重建監聽，離頁與換帳號撤除，晚回應不更新畫面。
+- 與訂單管理共用 orderGroup／orderStatusText 及 order-tone CSS，具體子狀態文案一致；服務中綠、待處理黃。無關聯或關聯單已完成／乘客取消顯示「—」，不留紅色已結束狀態。
+- 讀取中「…」、讀失敗明示並可重試；關聯單不存在、會員不符、無法識別的狀態顯示中性「訂單狀態待確認」。預約沿既有 reservationState 文案，不新增訂單狀態。
+- 上方篩選同步改為全部／無當前訂單／服務中／待處理／狀態待確認，排序使用實際顯示文案；篩選結果隨訂單變更更新，頁碼縮減時回到有效頁。帳號權限與管理操作保持。
+- 沿 loggedFirestore 記錄監聽及錯誤，補當前訂單 ENTITY_STATE（orderId／status，無乘客姓名或查詢名單）及畫面讀取狀態；無新增 FF／Rules／雲端資料寫入。部署與驗收見 root 交接。
+
 ## 乘客列表與目前統計（11/15）
 
 - 姓名／編號合欄並保留頭像；姓名與編號各自可排序。搜尋姓名或完整外顯編號，保留前導零。電話欄／排序／搜尋退場，users.phoneNumber 預留欄位保持。
 - 完成搭乘／棄單／未出現由 webAdmin.PASSENGER_COUNTS 讀 `_dispatch_passenger_counts/{會員內碼}` 的 completedTripCount／cancelAfterAcceptCount／noShowCount。這是目前新核心累計，訂單與卡片仍讀當時快照。缺文件「—」、有效零值「0」、讀取中「…」、失敗明示並可重試。
 - 乘客名單沿既有 users 監聽；取得名單與重新整理時，按每批 100 人讀統計。統計集合不額外監聽；重新整理可取得最新值。姓名／編號、搜尋、篩選及每頁 10 人保留。換帳號、離頁及較新名單使舊回應失效。
-- 註冊時間固定 Asia/Taipei，格式 yyyy/MM/dd HH:mm:ss。窄版表格橫向捲動；帳號權限、叫車行程與管理操作維持後續討論。
+- 註冊時間固定 Asia/Taipei，格式 yyyy/MM/dd HH:mm:ss。窄版表格橫向捲動；當前訂單接線見頁首，帳號權限與管理操作維持後續討論。
 - 舊 User.noShowCount 與兩個元件的會員解碼已移除；新計數及訂單快照的同名 noShowCount 保留。操作／排序／畫面讀取狀態及 API 結果沿既有 sysLog，不上傳姓名或統計查詢名單。
 - 正式 build、完整乘客／訂單 Chrome fixture 與 390px 長姓名／橫捲／sysLog 通過；fixture 使用隔離 Auth／FS／HTTP。部署、資料清理與 Ready 人工驗收狀態見 root 交接。
 

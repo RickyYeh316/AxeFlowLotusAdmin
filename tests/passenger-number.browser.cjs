@@ -20,10 +20,22 @@ const loader = write('loader.cjs', `const ts=require(${JSON.stringify(require.re
 const entry = write('entry.js', `import {startSystemLog,logScreen} from ${JSON.stringify(path.join(root,'src/lib/systemLogs/client.ts'))}; import React from 'react'; import {createRoot} from 'react-dom/client'; import Manager from ${JSON.stringify(path.join(root,'src/components/UserManager.tsx'))}; import Orders from ${JSON.stringify(path.join(root,'src/components/OrderManager.tsx'))}; const view=createRoot(document.getElementById('root')); const createLog=window.LotusSystemLog.create; window.LotusSystemLog.create=o=>createLog({...o,intervalMs:20,uploadIntervalMs:0,minUploadMs:0,priorityDelayMs:0});startSystemLog();window.showView=which=>{logScreen(which);view.render(React.createElement(which==='orders'?Orders:Manager))}; window.showView('users');`);
 const store = write('firestore.js', `
 export const collection=(_db,name)=>({name});
-export const onSnapshot=(ref,callback)=>{let active=true;const emit=()=>{if(active)callback({forEach:fn=>(window.fixture[ref.name]||[]).forEach(d=>fn({id:d.id,data:()=>d.data}))})};if(ref.name==='orders')window.reemitOrders=emit;if(ref.name==='users')window.reemitUsers=emit;queueMicrotask(emit);return()=>{active=false}};
+window.orderListeners=new Map();window.orderReadFailures=new Set();
+const orderSnapshot=id=>{const data=window.fixture.orders.find(d=>d.id===id)?.data;return {id,exists:()=>!!data,data:()=>data,metadata:{fromCache:false}}};
+window.emitOrder=id=>{for(const listener of window.orderListeners.get(id)||[])listener.emit()};
+window.captureOrder=id=>{const snap=orderSnapshot(id),callbacks=[...(window.orderListeners.get(id)||[])].map(l=>l.callback);return ()=>callbacks.forEach(fn=>fn(snap))};
+export const onSnapshot=(ref,callback,error)=>{
+ let active=true;
+ if(ref.path?.startsWith('orders/')){
+  const listener={callback,emit:()=>{if(active){if(window.orderReadFailures.has(ref.id))error({code:'permission-denied'});else callback(orderSnapshot(ref.id))}}};
+  const listeners=window.orderListeners.get(ref.id)||new Set();listeners.add(listener);window.orderListeners.set(ref.id,listeners);queueMicrotask(listener.emit);
+  return()=>{active=false;listeners.delete(listener);if(!listeners.size)window.orderListeners.delete(ref.id)};
+ }
+ const emit=()=>{if(active)callback({forEach:fn=>(window.fixture[ref.name]||[]).forEach(d=>fn({id:d.id,data:()=>d.data}))})};if(ref.name==='orders')window.reemitOrders=emit;if(ref.name==='users')window.reemitUsers=emit;queueMicrotask(emit);return()=>{active=false}
+};
 export const Timestamp={now:()=>({toDate:()=>new Date()}),fromDate:v=>v};
 export const addDoc=()=>{throw Error('Unexpected write')};export const updateDoc=addDoc;export const deleteDoc=addDoc;
-export const doc=(_db,...parts)=>parts.join('/');export const serverTimestamp=()=>null;
+export const doc=(_db,...parts)=>({path:parts.join('/'),id:parts.at(-1)});export const serverTimestamp=()=>null;
 `);
 const fixture = `
 window.countReads=[];window.countOffset=0;window.countsFailure=false;window.holdCounts=false;window.heldCounts=[];
@@ -89,7 +101,7 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     await fill('input.search-input','MEMBER-private');await wait(`document.querySelectorAll('tbody tr').length===0`);
     await fill('input.search-input','');await wait(`document.querySelectorAll('tbody tr').length===5`);
     await wait(`document.querySelector('tbody tr .passenger-count')?.textContent==='20'`);
-    assert.deepEqual(await run(`[...document.querySelectorAll('thead th')].map(el=>el.innerText.replaceAll('\\n','').trim())`),['乘客姓名/編號','帳號權限','叫車行程','完成搭乘','棄單','未出現','註冊時間','管理操作']);
+    assert.deepEqual(await run(`[...document.querySelectorAll('thead th')].map(el=>el.innerText.replaceAll('\\n','').trim())`),['乘客姓名/編號','帳號權限','當前訂單','完成搭乘','棄單','未出現','註冊時間','管理操作']);
     assert.deepEqual(await run(`[...document.querySelectorAll('tbody tr')].slice(0,3).map(r=>[...r.querySelectorAll('.passenger-count')].map(c=>c.textContent))`),[['20','5','1'],['0','0','0'],['—','—','—']]);
     assert.equal(await run(`document.querySelector('tbody').innerText.includes('2026/11/13 08:00:00')`),true);
     assert.equal(await run(`document.body.innerText.includes('聯絡電話')||document.body.innerText.includes('棄單次數')`),false);
@@ -99,6 +111,61 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     await wait(`document.querySelector('tbody .passenger-number').textContent==='—'`);
     await run(`document.querySelector('[data-syslog="users.sort.name"]').click()`);
     await wait(`document.querySelector('tbody .passenger-name').textContent==='乘客0'`);
+    // Only explicit current links are read; existing historical orders never become current.
+    assert.deepEqual(await run(`[...document.querySelectorAll('.passenger-current-order')].map(el=>el.textContent.trim())`),['—','—','—','—','—']);
+    assert.equal(await run(`orderListeners.size`),0);
+    await run(`window.savedOrderData=fixture.orders.map(o=>({...o.data}));fixture.users[0].data.currentOrderId='order-private-0';fixture.users[1].data.currentOrderId='order-private-1';fixture.orders[0].data.status='DRIVER_CANCELLED';fixture.orders[1].data.status='ACCEPTED';reemitUsers()`);
+    await wait(`document.querySelectorAll('.passenger-current-order .order-status').length===2`);
+    await run(`document.getAnimations().forEach(a=>a.finish())`);
+    fs.writeFileSync(path.join(temp,'users-current-order.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    await send('Emulation.setDeviceMetricsOverride',{width:390,height:900,deviceScaleFactor:1,mobile:true});
+    await run(`document.querySelector('.admin-table-container').scrollLeft=document.querySelector('.passenger-current-order').offsetLeft-document.querySelector('tbody td').offsetLeft`);
+    fs.writeFileSync(path.join(temp,'users-current-order-390.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    await run(`document.querySelector('.admin-table-container').scrollLeft=0`);
+    await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+
+    const cases=[['PENDING',null,'等待派車','waiting'],['MATCHING',null,'媒合中','waiting'],['FAILED_MATCH',null,'媒合失敗／待乘客決定','waiting'],['DRIVER_CANCELLED',null,'司機中止服務／待乘客決定','waiting'],['NO_SHOW',null,'乘客未出現／待乘客決定','waiting'],['ACCEPTED',null,'前往上車地點','serving'],['ARRIVED',null,'已抵達','serving'],['IN_PROGRESS',null,'載客中','serving'],['SCHEDULED','OPEN','預約待承接','waiting'],['SCHEDULED','CLAIMED','預約已承接','serving'],['SCHEDULED','CONFIRMED','預約已確認','serving']];
+    for(const [status,reservationState,label,group] of cases){
+      await run(`fixture.orders[0].data.status=${JSON.stringify(status)};fixture.orders[0].data.reservationState=${JSON.stringify(reservationState)};emitOrder('order-private-0')`);
+      await wait(`document.querySelector('.passenger-current-order').textContent.trim()===${JSON.stringify(label)}`);
+      assert.equal(await run(`document.querySelector('.passenger-current-order .order-status').classList.contains('order-tone-${group}')`),true);
+      assert.equal(await run(`getComputedStyle(document.querySelector('.passenger-current-order .order-status')).borderColor`),group==='serving'?'rgb(102, 178, 146)':'rgb(214, 179, 92)');
+    }
+    await fill('[data-syslog="users.currentOrder.filter"]','serving');await wait(`document.querySelectorAll('tbody tr').length===2`);
+    await run(`fixture.orders[0].data.status='NO_SHOW';emitOrder('order-private-0')`);await wait(`document.querySelectorAll('tbody tr').length===1`);
+    await fill('[data-syslog="users.currentOrder.filter"]','waiting');await wait(`document.querySelectorAll('tbody tr').length===1&&document.querySelector('tbody').textContent.includes('乘客0')`);
+    await fill('[data-syslog="users.currentOrder.filter"]','none');await wait(`document.querySelectorAll('tbody tr').length===3`);
+    await fill('[data-syslog="users.currentOrder.filter"]','ALL');await wait(`document.querySelectorAll('tbody tr').length===5`);
+    await run(`document.querySelector('[data-syslog="users.sort.currentOrder"]').click()`);
+    await wait(`!!document.querySelector('[data-syslog="users.sort.currentOrder"] svg')`);
+    const labels=await run(`[...document.querySelectorAll('.passenger-current-order')].map(el=>el.textContent.trim())`);
+    assert.deepEqual(labels,await run(`[...document.querySelectorAll('.passenger-current-order')].map(el=>el.textContent.trim()).sort((a,b)=>a.localeCompare(b))`));
+    await run(`document.querySelector('[data-syslog="users.sort.name"]').click()`);
+    await wait(`document.querySelector('.passenger-name').textContent==='乘客0'`);
+    for(const status of ['COMPLETED','CANCELLED_BY_USER']){
+      await run(`fixture.orders[0].data.status='${status}';emitOrder('order-private-0')`);
+      await wait(`document.querySelector('.passenger-current-order').textContent.trim()==='—'`);
+      assert.equal(await run(`document.querySelectorAll('.passenger-current-order .order-tone-closed').length`),0);
+    }
+    await run(`fixture.orders[0].data.status='OTHER_STATUS';emitOrder('order-private-0')`);
+    await wait(`document.querySelector('.passenger-current-order').textContent.includes('訂單狀態待確認')`);
+    await run(`fixture.orders[0].data.status='ACCEPTED';fixture.orders[0].data.userId='another-member';emitOrder('order-private-0')`);
+    await wait(`document.querySelector('.passenger-current-order').textContent.includes('訂單狀態待確認')`);
+    await run(`fixture.orders[0].data.userId='MEMBER-private-0';orderReadFailures.add('order-private-0');emitOrder('order-private-0')`);
+    await wait(`document.querySelector('[role="alert"]')?.textContent.includes('當前訂單讀取失敗')`);
+    assert.equal(await run(`document.querySelector('.passenger-current-order').textContent.trim()`),'讀取失敗');
+    await run(`orderReadFailures.clear();document.querySelector('[data-syslog="users.retry"]').click()`);
+    await wait(`document.querySelector('.passenger-current-order').textContent.includes('前往上車地點')&&!document.querySelector('[role="alert"]')`);
+    await run(`window.lateOrder=captureOrder('order-private-0');fixture.users[0].data.currentOrderId='missing-order';reemitUsers()`);
+    await wait(`orderListeners.has('missing-order')&&!orderListeners.has('order-private-0')&&document.querySelector('.passenger-current-order').textContent.includes('訂單狀態待確認')`);
+    await run(`lateOrder()`);assert.equal(await run(`document.querySelector('.passenger-current-order').textContent.trim()`),'訂單狀態待確認');
+    await run(`window.lateOwner=captureOrder('order-private-1');changeUser('other-admin');lateOwner()`);
+    await wait(`document.querySelectorAll('tbody tr').length===0&&orderListeners.size===0`);
+    await run(`changeUser('test-admin');fixture.users.forEach(u=>delete u.data.currentOrderId);fixture.orders.forEach((o,i)=>{o.data=savedOrderData[i]});document.querySelector('[data-syslog="users.retry"]').click()`);
+    await wait(`document.querySelectorAll('tbody tr').length===5&&document.querySelector('tbody .passenger-count')?.textContent==='20'&&orderListeners.size===0`);
+    await wait(`uploadedLogs.some(b=>b.events.some(e=>e.type==='ENTITY_STATE'&&e.details.reason==='CURRENT_ORDER'&&e.details.orderId==='order-private-0'))`);
+    // Later privacy checks focus on the stats request; current-order tracing intentionally includes orderId.
+    console.log('PASS: 當前訂單只跟明確關聯、11種狀態同文案／黃綠色、終態回空、篩選排序、讀失敗重試、缺單／錯會員／未知狀態、撤監聽及晚回應隔離、sysLog。');
     await run(`countsFailure=true;document.querySelector('[data-syslog="users.reload"]').click()`);
     await wait(`document.querySelector('[role="alert"]')?.innerText.includes('統計暫時無法讀取')`);
     assert.equal(await run(`document.querySelector('tbody .passenger-count').textContent`),'讀取失敗');
@@ -278,7 +345,8 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     assert.equal(await run(`document.body.innerText.includes('MEMBER-private')`),false);
     await wait(`window.uploadedLogs.some(b=>b.events.some(e=>e.type==='STREAM_STATE'))`);
     await wait(`window.uploadedLogs.some(b=>b.events.some(e=>e.type==='UI_CLICK'&&e.details.control==='order.pickup_map'&&e.details.orderId==='order-private-0'))`);
-    assert.equal(await run(`uploadedLogs.every(b=>b.source==='webAdmin'&&b.owner==='test-admin')`),true);
+    assert.equal(await run(`uploadedLogs.every(b=>b.source==='webAdmin'&&['test-admin','other-admin'].includes(b.owner))`),true);
+    assert.equal(await run(`uploadedLogs.filter(b=>b.owner==='other-admin').every(b=>b.events.every(e=>e.details.reason!=='CURRENT_ORDER'))`),true);
     assert.equal(await run(`JSON.stringify(uploadedLogs).includes('fixture-token')`),false);
 
     // v5.2：兩個新增欄位皆可升降冪，缺目的地仍可排序。
