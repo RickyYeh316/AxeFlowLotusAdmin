@@ -130,6 +130,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
       case OrderStatus.ACCEPTED: return '已接單';
       case OrderStatus.ARRIVED: return '司機抵達';
       case OrderStatus.IN_PROGRESS: return '載客中';
+      case OrderStatus.CANCELLED_BY_SYSTEM: return '系統取消';
       case OrderStatus.COMPLETED: return '已完成';
       default: return '已取消';
     }

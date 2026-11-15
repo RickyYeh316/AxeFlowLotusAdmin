@@ -10,6 +10,7 @@ export enum OrderStatus {
   ARRIVED = "ARRIVED", // 司機抵達
   IN_PROGRESS = "IN_PROGRESS", // 搭乘中
   COMPLETED = "COMPLETED", // 行程結束
+  CANCELLED_BY_SYSTEM = "CANCELLED_BY_SYSTEM", // 系統取消
   CANCELLED_BY_USER = "CANCELLED_BY_USER", // 用戶取消
   DRIVER_CANCELLED = "DRIVER_CANCELLED", // 司機接單後取消，等待用戶決定重派或取消
   NO_SHOW = "NO_SHOW", // 司機標記用戶棄單
@@ -39,6 +40,7 @@ export enum UserTripStatus {
 }
 
 export enum UserAccountStatus {
+  DELETED = "DELETED", // 不可逆封存
   ACTIVE = "ACTIVE", // 帳號正常開通
   BANNED = "BANNED", // 帳號停權
 }

@@ -4,13 +4,13 @@ window.adminReads=[];window.detailStatus='COMPLETED';window.detailDenied=false;w
 const originalFixtureFetch=window.fetch;
 window.fetch=async(url,init)=>{
  if(!String(url).endsWith('/webAdmin'))return originalFixtureFetch(url,init);
- const p=JSON.parse(init.body);if(p.action==='PASSENGER_COUNTS')return originalFixtureFetch(url,init);adminReads.push(p);
+ const p=JSON.parse(init.body);if(['PASSENGER_COUNTS','SET_MEMBER_STATUS'].includes(p.action))return originalFixtureFetch(url,init);adminReads.push(p);
  if(window.listFailure===p.orderId)return {ok:false,status:503,json:async()=>({error:'快照讀取失敗'})};
  if(detailDenied)return {ok:false,status:403,json:async()=>({error:'此帳號沒有管理權限。'})};
  let body;
  if(p.action==='ORDER_DETAIL'){
    if(holdDetail)await new Promise(r=>window.releaseDetail=r);
-   body={history:{incomplete:false,events:[{label:'乘客下單',occurredAt:{seconds:1794628000}},{label:'派送司機',carPlate:'AAA-1111',occurredAt:{seconds:1794628001}},{label:'司機拒絕',carPlate:'AAA-1111',occurredAt:{seconds:1794628005}},{label:'派送司機',carPlate:'BBB-2222',occurredAt:{seconds:1794628006}},{label:'行程完成',occurredAt:{seconds:1794628579}}]},card:{orderId:p.orderId,readableId:'123456',orderStatus:detailStatus,active:!['COMPLETED','CANCELLED_BY_USER'].includes(detailStatus),updatedAt:{seconds:1794628579},driver:{name:'快照司機',carPlate:'TEA-5596'},display:{passengerName:'測試乘客',startAddress:'花蓮市進豐街115號',endAddress:'新城鄉北埔路415-1號',pickupLocation:{lat:24,lng:121},destination:{lat:24.01,lng:121.01},couponSnapshot:{name:'新戶券',amount:100},isElderlyCare:true,note:'備註\\n第二行'}}};
+   body={history:{incomplete:false,events:[{label:'乘客下單',occurredAt:{seconds:1794628000}},{label:'派送司機',carPlate:'AAA-1111',occurredAt:{seconds:1794628001}},{label:'司機拒絕',carPlate:'AAA-1111',occurredAt:{seconds:1794628005}},{label:'派送司機',carPlate:'BBB-2222',occurredAt:{seconds:1794628006}},{label:'行程完成',occurredAt:{seconds:1794628579}}]},card:{orderId:p.orderId,readableId:'123456',orderStatus:detailStatus,active:!['COMPLETED','CANCELLED_BY_USER','CANCELLED_BY_SYSTEM'].includes(detailStatus),updatedAt:{seconds:1794628579},driver:{name:'快照司機',carPlate:'TEA-5596'},display:{passengerName:'測試乘客',startAddress:'花蓮市進豐街115號',endAddress:'新城鄉北埔路415-1號',pickupLocation:{lat:24,lng:121},destination:{lat:24.01,lng:121.01},couponSnapshot:{name:'新戶券',amount:100},isElderlyCare:true,note:'備註\\n第二行'}}};
    if(window.timelineFixture)body.history=window.timelineFixture;
    if(p.orderId.startsWith('order-private-')) {
      const raw=window.fixture.orders.find(o=>o.id===p.orderId)?.data;

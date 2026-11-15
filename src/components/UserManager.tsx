@@ -2,12 +2,12 @@
 
 import { passengerNumber } from '../lib/passengerNumber';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { auth, db } from '../firebase/config';
-import { collection, onSnapshot, doc, updateDoc } from '../lib/loggedFirestore';
+import { collection, onSnapshot, doc } from '../lib/loggedFirestore';
 import { Search, ChevronUp, ChevronDown, Ban, CheckCircle, RefreshCw } from 'lucide-react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { adminApi } from '../lib/adminApi';
+import { adminApi, AdminApiError } from '../lib/adminApi';
 import { recordSystemLog } from '../lib/systemLogs/client';
 import { User, UserTripStatus, UserAccountStatus, Order } from '../types';
 import { orderGroup, orderStatusText } from '../lib/orderPresentation';
@@ -28,6 +28,10 @@ export default function UserManager() {
   const [countsError, setCountsError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const [currentOrders, setCurrentOrders] = useState<{ key: string; items: Record<string, CurrentOrderRead> }>({ key: '', items: {} });
+
+  const [statusBusy, setStatusBusy] = useState(false);
+  const statusFlight = useRef(false);
+  const statusPending = useRef<{owner: string; userId: string; operationId: string; expectedStatus: string; accountStatus: string} | null>(null);
 
   // Sorting State
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'ascending' | 'descending' } | null>({
@@ -91,15 +95,8 @@ export default function UserManager() {
         else if (parsedTripStatus === 2 || parsedTripStatus === '2') parsedTripStatus = UserTripStatus.IN_TRIP;
         else if (parsedTripStatus === 'BANNED' || parsedTripStatus === 3 || parsedTripStatus === '3') parsedTripStatus = UserTripStatus.IDLE;
 
-        // 2. Parsing Account Status with migration fallbacks
-        let parsedAccountStatus = data.accountStatus;
-        if (!parsedAccountStatus) {
-          if (data.status === 'BANNED' || data.status === 3 || data.status === '3') {
-            parsedAccountStatus = UserAccountStatus.BANNED;
-          } else {
-            parsedAccountStatus = UserAccountStatus.ACTIVE;
-          }
-        }
+        // 只有正式 ACTIVE 值可顯示正常啟用；未知／缺值保持待確認。
+        const parsedAccountStatus = typeof data.accountStatus === 'string' ? data.accountStatus : '';
 
         list.push({
           userId: doc.id,
@@ -218,21 +215,29 @@ export default function UserManager() {
   }, [users, searchQuery, accountFilter, currentOrderFilter, currentOrderViews]);
 
   const handleToggleBan = async (user: User) => {
-    const isBanned = user.accountStatus === UserAccountStatus.BANNED;
-    const newStatus = isBanned ? UserAccountStatus.ACTIVE : UserAccountStatus.BANNED;
-    const actionText = isBanned ? '解除停權' : '執行停權';
-    
-    if (window.confirm(`確定要對乘客 ${user.passengerName} ${actionText} 嗎？`)) {
-      try {
-        await updateDoc(doc(db, 'users', user.userId), {
-          accountStatus: newStatus,
-          updatedAt: new Date()
-        });
-      } catch (e) {
-        console.error("Failed to toggle user status:", e);
-        alert('操作失敗，請確認權限。');
-      }
-    }
+    const owner = auth.currentUser?.uid;
+    if (!owner || statusFlight.current) return;
+    if (statusPending.current?.owner !== owner) statusPending.current = null;
+    const pending = statusPending.current;
+    if (pending && pending.userId !== user.userId) { alert('前一筆操作結果待確認，請先重試原乘客操作。'); return; }
+    if (!pending && ![UserAccountStatus.ACTIVE, UserAccountStatus.BANNED].includes(user.accountStatus)) return;
+    const request = pending || { owner, userId: user.userId, operationId: crypto.randomUUID(),
+      expectedStatus: user.accountStatus,
+      accountStatus: user.accountStatus === UserAccountStatus.BANNED ? UserAccountStatus.ACTIVE : UserAccountStatus.BANNED };
+    const message = pending ? '重試確認上一筆帳號操作？' : request.accountStatus === UserAccountStatus.BANNED
+      ? `確定停權乘客 ${user.passengerName}？所有未完成訂單（含載客中）將系統取消。`
+      : `確定解除乘客 ${user.passengerName} 的停權？已取消訂單不會恢復。`;
+    if (!window.confirm(message)) return;
+    statusPending.current = request; statusFlight.current = true; setStatusBusy(true);
+    try {
+      const {owner: _owner, ...input} = request;
+      await adminApi({action:'SET_MEMBER_STATUS', ...input});
+      statusPending.current = null;
+    } catch (error) {
+      if (auth.currentUser?.uid !== owner) { statusPending.current = null; return; }
+      if (!(error instanceof AdminApiError) || !error.uncertain) statusPending.current = null;
+      alert(error instanceof Error ? error.message : '帳號操作失敗，請重試。');
+    } finally { statusFlight.current = false; setStatusBusy(false); }
   };
 
   // Sorting & Pagination Logic
@@ -361,6 +366,7 @@ export default function UserManager() {
             >
               <option value="ALL" style={{ background: '#0c0d14' }}>全部帳號狀態</option>
               <option value="ACTIVE" style={{ background: '#0c0d14' }}>啟用正常 (ACTIVE)</option>
+              <option value="DELETED" style={{background: '#0c0d14'}}>已封存 (DELETED)</option>
               <option value="BANNED" style={{ background: '#0c0d14' }}>限制停權 (BANNED)</option>
             </select>
           </div>
@@ -438,8 +444,10 @@ export default function UserManager() {
             </thead>
             <tbody>
               {paginatedUsers.map((user) => {
-                let accText = '正常啟用';
-                let accClass = 'status-pill online';
+                let accText = '狀態待確認';
+                let accClass = 'status-pill offline';
+                if (user.accountStatus === UserAccountStatus.ACTIVE) { accText = '正常啟用'; accClass = 'status-pill online'; }
+                else if (user.accountStatus === UserAccountStatus.DELETED) accText = '已封存';
                 if (user.accountStatus === UserAccountStatus.BANNED) {
                   accText = '已停權';
                   accClass = 'status-pill offline';
@@ -479,8 +487,10 @@ export default function UserManager() {
                     <td>
                       <button 
                         onClick={() => handleToggleBan(user)}
+                        data-syslog="users.accountStatus.toggle"
+                        disabled={statusBusy || (statusPending.current?.owner === auth.currentUser?.uid && statusPending.current?.userId !== user.userId) || ![UserAccountStatus.ACTIVE, UserAccountStatus.BANNED].includes(user.accountStatus)}
                         className={`btn-icon ${user.accountStatus === UserAccountStatus.BANNED ? 'edit' : 'delete'}`}
-                        title={user.accountStatus === UserAccountStatus.BANNED ? '啟用帳號' : '停權帳號'}
+                        title={statusPending.current?.userId === user.userId ? '重試確認上一筆帳號操作' : user.accountStatus === UserAccountStatus.BANNED ? '啟用帳號' : '停權帳號'}
                         style={{ display: 'inline-flex', padding: 6 }}
                       >
                         {user.accountStatus === UserAccountStatus.BANNED ? <CheckCircle size={14} /> : <Ban size={14} />}

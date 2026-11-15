@@ -64,7 +64,7 @@ window.LotusOrderCard = { create({orderMaps, orderChats, rebook, readOnly = fals
   const passengerHints = { PENDING: '正在等待派車。', MATCHING: '正在聯繫司機。', ACCEPTED: '司機正前往上車點。',
     ARRIVED: '司機已抵達。', IN_PROGRESS: '搭乘中。', FAILED_MATCH: '目前無合適司機，等待您決定取消或重派。',
     DRIVER_CANCELLED: '本次司機無法繼續服務，等待您決定取消或重派。',
-    NO_SHOW: '司機回報乘客未出現，等待您決定取消或重派。', COMPLETED: '本次搭乘已完成。', CANCELLED_BY_USER: '您已取消這張訂單。' };
+    NO_SHOW: '司機回報乘客未出現，等待您決定取消或重派。', COMPLETED: '本次搭乘已完成。', CANCELLED_BY_SYSTEM: '系統取消', CANCELLED_BY_USER: '您已取消這張訂單。' };
   function appendOrderNote(section, value) {
     if (typeof value !== 'string' || !value.trim()) return;
     const block = node('div', '', 'order-note');

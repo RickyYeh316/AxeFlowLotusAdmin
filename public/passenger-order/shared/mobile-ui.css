@@ -183,3 +183,6 @@ body.line-passenger .required-mark { color: #f87171; font-weight: 700; margin-in
 .line-passenger .history-date-actions button { min-height: 48px; color: #24476b; background: #fff; border-color: #24476b; }
 .line-passenger #history-date-cancel { color: #182332; }
 .line-passenger #history-date-error { color: #a31515; }
+
+/* 會員失效為全頁阻擋，入口告知使用醒目黃字。 */
+#auth-status.account-unavailable { color: #ffd54f; }

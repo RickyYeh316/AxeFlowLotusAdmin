@@ -6,7 +6,7 @@ export type OrderFilter = Exclude<OrderGroup, 'unknown'> | 'all';
 // 管理端依整張訂單分類；司機退出後仍可能等待乘客重派。
 export function orderGroup(order: Pick<Order, 'status' | 'reservationState'>): OrderGroup {
   const status = String(order.status);
-  if (['COMPLETED', 'CANCELLED_BY_USER'].includes(status)) return 'closed';
+  if (['COMPLETED', 'CANCELLED_BY_USER', 'CANCELLED_BY_SYSTEM'].includes(status)) return 'closed';
   if (['ACCEPTED', 'ARRIVED', 'IN_PROGRESS'].includes(status)
     || status === 'SCHEDULED' && ['CLAIMED', 'CONFIRMED'].includes(order.reservationState || '')) return 'serving';
   if (['SCHEDULED', 'PENDING', 'MATCHING', 'FAILED_MATCH', 'DRIVER_CANCELLED', 'NO_SHOW'].includes(status)) return 'waiting';
@@ -18,7 +18,7 @@ export function orderStatusText(order: Pick<Order, 'status' | 'reservationState'
     return ({ OPEN: '預約待承接', CLAIMED: '預約已承接', CONFIRMED: '預約已確認' } as Record<string, string>)[order.reservationState || ''] || '預約狀態待確認';
   }
   return ({ PENDING: '等待派車', MATCHING: '媒合中', ACCEPTED: '前往上車地點', ARRIVED: '已抵達',
-    IN_PROGRESS: '載客中', COMPLETED: '已完成', CANCELLED_BY_USER: '乘客已取消',
+    IN_PROGRESS: '載客中', CANCELLED_BY_SYSTEM: '系統取消', COMPLETED: '已完成', CANCELLED_BY_USER: '乘客已取消',
     DRIVER_CANCELLED: '司機中止服務／待乘客決定', NO_SHOW: '乘客未出現／待乘客決定',
     FAILED_MATCH: '媒合失敗／待乘客決定' } as Record<string, string>)[String(order.status)] || '訂單狀態待確認';
 }
@@ -37,7 +37,7 @@ const subcategorySamples: Pick<Order, 'status' | 'reservationState'>[] = [
   ...[OrderStatus.ACCEPTED, OrderStatus.ARRIVED, OrderStatus.IN_PROGRESS].map(status => ({ status })),
   { status: OrderStatus.SCHEDULED, reservationState: 'OPEN' },
   ...[OrderStatus.PENDING, OrderStatus.MATCHING, OrderStatus.FAILED_MATCH, OrderStatus.DRIVER_CANCELLED,
-    OrderStatus.NO_SHOW, OrderStatus.COMPLETED, OrderStatus.CANCELLED_BY_USER].map(status => ({ status })),
+    OrderStatus.NO_SHOW, OrderStatus.COMPLETED, OrderStatus.CANCELLED_BY_USER, OrderStatus.CANCELLED_BY_SYSTEM].map(status => ({ status })),
   { status: OrderStatus.SCHEDULED },
 ];
 export const orderSubcategories = [

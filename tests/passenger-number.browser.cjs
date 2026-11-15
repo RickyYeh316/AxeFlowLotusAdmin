@@ -39,9 +39,15 @@ export const doc=(_db,...parts)=>({path:parts.join('/'),id:parts.at(-1)});export
 `);
 const fixture = `
 window.countReads=[];window.countOffset=0;window.countsFailure=false;window.holdCounts=false;window.heldCounts=[];
-window.confirm=()=>false;window.uploadedLogs=[];window.fetch=async(url,init)=>{
+window.confirm=()=>false;window.alerts=[];window.alert=m=>alerts.push(m);window.statusWrites=[];window.statusUncertain=false;window.uploadedLogs=[];window.fetch=async(url,init)=>{
  if(String(url).endsWith('/webAdmin')){
-  const body=JSON.parse(init.body);if(body.action!=='PASSENGER_COUNTS')throw Error('Unexpected action');
+  const body=JSON.parse(init.body);
+  if(body.action==='SET_MEMBER_STATUS'){
+    statusWrites.push(body);if(statusUncertain)return {ok:false,status:503,json:async()=>({error:'操作結果待確認'})};
+    fixture.users.find(u=>u.id===body.userId).data.accountStatus=body.accountStatus;reemitUsers();
+    return {ok:true,status:200,json:async()=>({accountStatus:body.accountStatus})};
+  }
+  if(body.action!=='PASSENGER_COUNTS')throw Error('Unexpected action');
   if(init.headers.Authorization!=='Bearer fixture-token')throw Error('Missing token');
   countReads.push(body);
   if(countsFailure)return {ok:false,status:503,json:async()=>({error:'統計暫時無法讀取'})};
@@ -83,7 +89,7 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     ws.onmessage=event=>{const m=JSON.parse(event.data);if(m.id){const p=waiting.get(m.id);waiting.delete(m.id);m.error?p.reject(m.error):p.resolve(m.result);}else if(m.method==='Runtime.exceptionThrown')errors.push(m.params.exceptionDetails);};
     const send=(method,params={})=>new Promise((resolve,reject)=>{const id=++serial;waiting.set(id,{resolve,reject});ws.send(JSON.stringify({id,method,params}));});
     const run=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});assert.equal(r.exceptionDetails,undefined,JSON.stringify(r.exceptionDetails));return r.result.value;};
-    const wait=async expression=>{for(let i=0;i<250;i++){if(await run(expression))return;await new Promise(r=>setTimeout(r,30));}console.error('fixture runtime errors',errors);console.error('fixture diagnostics',await run(`({errors:document.body.innerText,frame:document.querySelector('iframe')?.contentDocument?.body.innerText,reads:window.adminReads})`));assert.fail(expression);};
+    const wait=async expression=>{for(let i=0;i<250;i++){if(await run(expression))return;await new Promise(r=>setTimeout(r,30));}console.error('fixture runtime errors',errors);console.error('fixture diagnostics',await run(`({errors:document.body.innerText,frame:document.querySelector('iframe')?.contentDocument?.body.innerText,reads:window.adminReads,statusWrites:window.statusWrites,alerts:window.alerts})`));assert.fail(expression);};
     const click=label=>run(`[...document.querySelectorAll('button')].find(b=>b.textContent===${JSON.stringify(label)}).click()`);
     const fill=async(selector,value)=>{await run(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(el instanceof HTMLSelectElement?HTMLSelectElement.prototype:el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));})()`);};
     await send('Runtime.enable');await send('Page.enable');
@@ -205,8 +211,25 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     if(process.argv.includes('--users-only')){console.log('PASS: 390px長姓名／表格橫捲與統計sysLog，無會員內碼／姓名內容。Screenshots: '+temp);return;}
     await run(`fixture.users[0].data.passengerName='乘客0';reemitUsers()`);
     await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+    await run(`fixture.users[1].data.accountStatus='DELETED';fixture.users[2].data.accountStatus='UNKNOWN';reemitUsers()`);
+    await wait(`document.querySelector('tbody').textContent.includes('已封存')`);
+    assert.equal(await run(`document.querySelectorAll('tbody button[data-syslog="users.accountStatus.toggle"]:disabled').length`),2);
+    await run(`window.confirm=()=>true;statusUncertain=true;document.querySelector('tbody button[data-syslog="users.accountStatus.toggle"]').click()`);
+    await wait(`alerts.length===1`);
+    await wait(`document.querySelector('button[title="重試確認上一筆帳號操作"]')?.disabled===false`);
+    await run(`statusUncertain=false;document.querySelector('button[title="重試確認上一筆帳號操作"]').click()`);
+    await wait(`document.querySelector('tbody').textContent.includes('已停權')`);
+    assert.deepEqual(await run(`statusWrites[0]`),await run(`statusWrites[1]`),'不確定結果沿相同operationId重送');
+    await run(`document.querySelector('button[title="啟用帳號"]').click()`);
+    await wait(`statusWrites.length===3 && document.querySelector('button[title="停權帳號"]')?.disabled===false`);
+    assert.equal(await run(`statusWrites[2].expectedStatus`),'BANNED');
+    await run(`fixture.users.forEach(u=>u.data.accountStatus='ACTIVE');reemitUsers();window.confirm=()=>false`);
+    console.log('PASS: 管理停權透過API、結果不確定同請求重送、解除停權、DELETED／未知值停用操作。');
     await run(`showView('orders')`);await wait(`document.querySelector('[data-syslog="order.filter.serving"]')?.getAttribute('aria-pressed')==='true'`);await run(`document.querySelector('[data-syslog="order.filter.all"]').click()`);await wait(`document.querySelectorAll('tbody tr').length===5`);
     assert.equal(await run(`document.querySelector('tbody').textContent.includes('MEMBER-private')`),false);
+    await run(`fixture.orders[0].data.status='CANCELLED_BY_SYSTEM';reemitOrders()`);
+    await wait(`document.querySelector('[data-log-order="order-private-0"] .order-tone-closed')?.textContent==='系統取消'`);
+    await run(`fixture.orders[0].data.status='COMPLETED';reemitOrders()`);
     await fill('input.search-input','123456');await wait(`document.querySelectorAll('tbody tr').length===2`);
     assert.equal(await run(`document.querySelector('tbody').textContent.includes('123456')`),true);
     await fill('input.search-input','000123');await wait(`document.querySelector('tbody').textContent.includes('000123')`);
