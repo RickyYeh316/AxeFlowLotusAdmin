@@ -113,7 +113,7 @@ window.fetch=async(url,options)=>{
     await fill('select','2');await fill('input[maxlength="256"]','全體活動150');await fill('input[type=number]','150');await fill('input[type=date]','2026-01-01');
     await run(`(()=>{const e=document.querySelectorAll('input[type=date]')[1];Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'2039-08-31');e.dispatchEvent(new Event('input',{bubbles:true}));})()`);
     await click('儲存草稿');await wait(`!document.querySelector('[role=dialog]')`);
-    await run(`[...document.querySelectorAll('tbody tr')].find(r=>r.textContent.includes('全體活動150')).querySelector('.btn-primary').click()`);
+    await run(`[...[...document.querySelectorAll('tbody tr')].find(r=>r.textContent.includes('全體活動150')).querySelectorAll('button')].find(b=>b.textContent==='發券').click()`);
     await wait(`document.querySelector('[role=dialog]')?.textContent.includes('發券給全體乘客')`);
     assert.equal(await run(`!!document.querySelector('[role=dialog] select')`),false);
     assert.equal(await run(`document.querySelector('.coupon-notify input').checked`),true);

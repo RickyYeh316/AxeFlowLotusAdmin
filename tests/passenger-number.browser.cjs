@@ -107,7 +107,7 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     await fill('input.search-input','MEMBER-private');await wait(`document.querySelectorAll('tbody tr').length===0`);
     await fill('input.search-input','');await wait(`document.querySelectorAll('tbody tr').length===5`);
     await wait(`document.querySelector('tbody tr .passenger-count')?.textContent==='20'`);
-    assert.deepEqual(await run(`[...document.querySelectorAll('thead th')].map(el=>el.innerText.replaceAll('\\n','').trim())`),['乘客姓名/編號','帳號權限','當前訂單','完成搭乘','棄單','未出現','註冊時間','管理操作']);
+    assert.deepEqual(await run(`[...document.querySelectorAll('thead th')].map(el=>el.innerText.replaceAll('\\n','').trim())`),['乘客姓名/編號','帳號權限','當前訂單','完成搭乘','棄單','未出現','註冊時間','操作']);
     assert.deepEqual(await run(`[...document.querySelectorAll('tbody tr')].slice(0,3).map(r=>[...r.querySelectorAll('.passenger-count')].map(c=>c.textContent))`),[['20','5','1'],['0','0','0'],['—','—','—']]);
     assert.equal(await run(`document.querySelector('tbody').innerText.includes('2026/11/13 08:00:00')`),true);
     assert.equal(await run(`document.body.innerText.includes('聯絡電話')||document.body.innerText.includes('棄單次數')`),false);
@@ -221,7 +221,7 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     await wait(`document.querySelector('tbody').textContent.includes('已停權')`);
     assert.deepEqual(await run(`statusWrites[0]`),await run(`statusWrites[1]`),'不確定結果沿相同operationId重送');
     await run(`document.querySelector('button[title="啟用帳號"]').click()`);
-    await wait(`statusWrites.length===3 && document.querySelector('button[title="停權帳號"]')?.disabled===false`);
+    await wait(`statusWrites.length===3 && document.querySelector('button[title="停用帳號"]')?.disabled===false`);
     assert.equal(await run(`statusWrites[2].expectedStatus`),'BANNED');
     await run(`fixture.users.forEach(u=>u.data.accountStatus='ACTIVE');reemitUsers();window.confirm=()=>false`);
     console.log('PASS: 管理停權透過API、結果不確定同請求重送、解除停權、DELETED／未知值停用操作。');

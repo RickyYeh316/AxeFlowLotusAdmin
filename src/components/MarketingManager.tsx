@@ -174,14 +174,14 @@ export default function MarketingManager() {
               {row.distribution?.lastError && <p className="coupon-help">{row.distribution.lastError}</p>}
             </td>
             <td><div className="coupon-actions">
-              {(row.type === 1 || ([2, 3].includes(row.type!) && row.status === 'draft')) && <button className="btn-secondary" disabled={disabled} onClick={() => edit(row)}>編輯</button>}
-              {row.type === 1 ? <button className="btn-secondary" disabled={disabled} onClick={() => {
+              {(row.type === 1 || ([2, 3].includes(row.type!) && row.status === 'draft')) && <button className="btn-secondary table-action-button" disabled={disabled} onClick={() => edit(row)}>編輯</button>}
+              {row.type === 1 ? <button className="btn-secondary table-action-button" disabled={disabled} onClick={() => {
                 if (window.confirm(`${row.status === 'active' ? '停用後新戶仍可正常註冊，但不配券' : '啟用新戶自動配券'}；已領券保持。確定繼續？`)) void action(row, 'COUPON_TOGGLE', { enabled: row.status !== 'active' });
               }}>{row.status === 'active' ? '停用' : '啟用'}</button> : <>
-                {[2, 3].includes(row.type!) && row.status === 'draft' && <button className="btn-secondary" disabled={disabled} onClick={() => { if (window.confirm(`刪除草稿「${row.title}」？`)) void action(row, 'COUPON_DELETE'); }}>刪除</button>}
-                {row.type === 3 && ['draft', 'published'].includes(row.status) && <button className="btn-primary" disabled={disabled || row.expiresAtMillis === null || now >= row.expiresAtMillis} onClick={() => void choosePassenger(row)}>發券</button>}
-                {row.type === 2 && row.status === 'draft' && <button className="btn-primary" disabled={disabled || row.expiresAtMillis === null || now >= row.expiresAtMillis} onClick={() => void choosePassenger(row)}>發券</button>}
-                {row.type === 2 && row.distribution?.state === 'FAILED' && <button className="btn-primary" disabled={disabled} onClick={() => void action(row, 'COUPON_RETRY')}>重試發券</button>}
+                {[2, 3].includes(row.type!) && row.status === 'draft' && <button className="btn-secondary table-action-button" disabled={disabled} onClick={() => { if (window.confirm(`刪除草稿「${row.title}」？`)) void action(row, 'COUPON_DELETE'); }}>刪除</button>}
+                {row.type === 3 && ['draft', 'published'].includes(row.status) && <button className="btn-secondary table-action-button" disabled={disabled || row.expiresAtMillis === null || now >= row.expiresAtMillis} onClick={() => void choosePassenger(row)}>發券</button>}
+                {row.type === 2 && row.status === 'draft' && <button className="btn-secondary table-action-button" disabled={disabled || row.expiresAtMillis === null || now >= row.expiresAtMillis} onClick={() => void choosePassenger(row)}>發券</button>}
+                {row.type === 2 && row.distribution?.state === 'FAILED' && <button className="btn-secondary table-action-button" disabled={disabled} onClick={() => void action(row, 'COUPON_RETRY')}>重試發券</button>}
               </>}
             </div></td>
           </tr>)}

@@ -459,7 +459,7 @@ export default function OrderManager() {
                     </div>
                   </td>
                   <td>
-                    <button type="button" data-syslog="order.detail_open" onClick={() => setDetailId(order.id)} className="btn-secondary order-detail-button">看詳細</button>
+                    <button type="button" data-syslog="order.detail_open" onClick={() => setDetailId(order.id)} className="btn-secondary table-action-button order-detail-button">看詳細</button>
                   </td>
                 </tr>
               ))}

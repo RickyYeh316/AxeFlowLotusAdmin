@@ -5,7 +5,7 @@ import { passengerNumber } from '../lib/passengerNumber';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { auth, db } from '../firebase/config';
 import { collection, onSnapshot, doc } from '../lib/loggedFirestore';
-import { Search, ChevronUp, ChevronDown, Ban, CheckCircle, RefreshCw } from 'lucide-react';
+import { Search, ChevronUp, ChevronDown, RefreshCw } from 'lucide-react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { adminApi, AdminApiError } from '../lib/adminApi';
 import { recordSystemLog } from '../lib/systemLogs/client';
@@ -439,7 +439,7 @@ export default function UserManager() {
                 <th className="passenger-count">棄單</th>
                 <th className="passenger-count">未出現</th>
                 <th style={{ cursor: 'pointer' }} onClick={() => requestSort('createdAt')}>註冊時間 {getSortIcon('createdAt')}</th>
-                <th>管理操作</th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -489,11 +489,10 @@ export default function UserManager() {
                         onClick={() => handleToggleBan(user)}
                         data-syslog="users.accountStatus.toggle"
                         disabled={statusBusy || (statusPending.current?.owner === auth.currentUser?.uid && statusPending.current?.userId !== user.userId) || ![UserAccountStatus.ACTIVE, UserAccountStatus.BANNED].includes(user.accountStatus)}
-                        className={`btn-icon ${user.accountStatus === UserAccountStatus.BANNED ? 'edit' : 'delete'}`}
-                        title={statusPending.current?.userId === user.userId ? '重試確認上一筆帳號操作' : user.accountStatus === UserAccountStatus.BANNED ? '啟用帳號' : '停權帳號'}
-                        style={{ display: 'inline-flex', padding: 6 }}
+                        className="btn-secondary table-action-button"
+                        title={statusPending.current?.userId === user.userId ? '重試確認上一筆帳號操作' : user.accountStatus === UserAccountStatus.BANNED ? '啟用帳號' : '停用帳號'}
                       >
-                        {user.accountStatus === UserAccountStatus.BANNED ? <CheckCircle size={14} /> : <Ban size={14} />}
+                        {user.accountStatus === UserAccountStatus.BANNED ? '啟用' : '停用'}
                       </button>
                     </td>
                   </tr>

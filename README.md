@@ -1,5 +1,7 @@
 # LotusAH — Web 管理介面
 
+列表操作樣式：訂單「看詳細」、乘客「停用／啟用」、優惠券列表操作共用 `btn-secondary table-action-button`；乘客欄名為「操作」。右上新增優惠券草稿／結帳、工具列與彈窗保持；結帳列表目前沒有操作欄。
+
 ## 會員停權與系統取消（11/15）
 
 UserManager 以 accountStatus 精確顯示 ACTIVE正常啟用／BANNED已停權／DELETED已封存；未知或缺值顯示待確認，DELETED及未知值禁用操作。原停權按鈕改走 webAdmin.SET_MEMBER_STATUS，確認文案說明未完成訂單含載客中皆系統取消；不再直接 updateDoc。操作防連點，結果不確定時保留原 operationId 重試，期間其他會員操作停用；後端原子取消與回執契約見 FF admin README。
