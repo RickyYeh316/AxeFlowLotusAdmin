@@ -1090,6 +1090,7 @@ body.modal-open .workspace-tabs-bar {
 .checkout-candidates { display: flex; flex-wrap: wrap; gap: 8px; max-height: 180px; overflow-y: auto; }
 .checkout-summary { margin: 24px 0; font-weight: 600; overflow-wrap: anywhere; }
 .checkout-table { min-width: 960px; }
+.checkout-identity-heading { line-height: 1.9; }
 .checkout-table td { white-space: normal; overflow-wrap: anywhere; }
 .category-pill:disabled { opacity: 0.5; cursor: not-allowed; }
 @media (max-width: 600px) {
@@ -1137,7 +1138,7 @@ body.modal-open .workspace-tabs-bar {
 .order-detail-dialog iframe {width:100%;flex:1;min-height:0;border:0;background:#10151e}
 @media(max-width:600px) {.order-detail-dialog{width:100vw;height:100dvh;border-radius:0}}
 
-/* 訂單分類與卡片框色一致；訂單列表與乘客當前訂單共用，結帳頁保持。 */
+/* 訂單分類與卡片框色一致；訂單、乘客與優惠券管理清單共用。 */
 .order-status-toolbar {display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center}
 .order-tone-serving {--order-tone:#66b292;--order-tint:#66b29218}
 .order-tone-waiting {--order-tone:#d6b35c;--order-tint:#d6b35c18}
@@ -1175,3 +1176,7 @@ body.modal-open .workspace-tabs-bar {
 .passenger-sheet .admin-table td:first-child { min-width: 270px; max-width: 420px; }
 
 .passenger-sheet [data-syslog="users.reload"] { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+
+/* 管理清單：分類操作列之下獨立放置搜尋列。 */
+.coupon-filterbar { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin: 24px 0 20px; }
+.checkout-time-search { width: min(100%, 320px); }

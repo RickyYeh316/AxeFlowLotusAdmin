@@ -6,7 +6,7 @@ import { passengerNumber } from '../lib/passengerNumber';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { Plus, X, RefreshCw } from 'lucide-react';
+import { Plus, X, RefreshCw, Search } from 'lucide-react';
 import { auth } from '../firebase/config';
 import { adminApi, AdminApiError } from '../lib/adminApi';
 
@@ -26,7 +26,9 @@ export default function MarketingManager() {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [rows, setRows] = useState<CouponRow[]>([]), [loading, setLoading] = useState(true);
   const [error, setError] = useState(''), [notice, setNotice] = useState('');
-  const [history, setHistory] = useState(false), [page, setPage] = useState(1), [now, setNow] = useState(Date.now());
+  const [view, setView] = useState<'valid' | 'invalid' | 'all'>('valid');
+  const [listQuery, setListQuery] = useState('');
+  const [page, setPage] = useState(1), [now, setNow] = useState(() => Date.now());
   const [sort, setSort] = useState<{ key: 'title' | 'type' | 'discountAmount' | 'startDate' | 'endDate'; ascending: boolean }>({ key: 'title', ascending: true });
   const [editing, setEditing] = useState<CouponRow | null | undefined>(undefined), [form, setForm] = useState<Form>(emptyForm);
   const [issuing, setIssuing] = useState<CouponRow | null>(null), [passengers, setPassengers] = useState<Passenger[]>([]);
@@ -132,14 +134,18 @@ export default function MarketingManager() {
     } catch (e) { if (generation === scope.current) setError((e as Error).message); }
     finally { if (generation === scope.current) setMembersLoading(false); }
   }
+  const invalidRows = useMemo(() => new Set(rows.filter(row => row.type !== 1 && row.status !== 'draft'
+    && row.expiresAtMillis !== null && now >= row.expiresAtMillis).map(row => row.id)), [rows, now]);
+  const counts = { valid: rows.length - invalidRows.size, invalid: invalidRows.size, all: rows.length };
   const filtered = useMemo(() => rows.filter(row => {
-    const expired = row.type !== 1 && row.status !== 'draft' && row.expiresAtMillis !== null && now >= row.expiresAtMillis;
-    return history ? expired : !expired;
+    if (view !== 'all' && invalidRows.has(row.id) !== (view === 'invalid')) return false;
+    const term = listQuery.trim().toLowerCase();
+    return [typeName(row.type), row.title, String(row.discountAmount)].some(value => value.toLowerCase().includes(term));
   }).sort((a, b) => {
     const x = a[sort.key] ?? '', y = b[sort.key] ?? '';
     const value = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'zh-TW');
     return sort.ascending ? value : -value;
-  }), [rows, history, now, sort]);
+  }), [rows, view, invalidRows, listQuery, sort]);
   const pages = Math.max(1, Math.ceil(filtered.length / itemsPerPage)), currentPage = Math.min(page, pages);
   const disabled = busy || pending !== null;
   const memberMatches = passengers.filter(p => p.passengerName.toLowerCase().includes(search.trim().toLowerCase()) || passengerNumber(p.passengerNumber) === search.trim());
@@ -155,14 +161,21 @@ export default function MarketingManager() {
           <p className="coupon-help">新戶自動配券、活動全體發券、指定乘客補償</p></div>
         <button className="btn-primary" disabled={disabled || loading} onClick={() => edit(null)}><Plus size={16} />新增優惠券草稿</button>
       </div>
-      <div className="coupon-toolbar">
-        <button className={history ? 'btn-secondary' : 'btn-primary'} onClick={() => { setHistory(false); setPage(1); }}>有效優惠券</button>
-        <button className={history ? 'btn-primary' : 'btn-secondary'} onClick={() => { setHistory(true); setPage(1); }}>失效優惠券</button>
-        <button className="btn-secondary" disabled={loading || disabled} onClick={() => void reload()}><RefreshCw size={14} />重新整理</button>
+      <div className="order-status-toolbar">
+        {([['valid', '有效', 'serving'], ['invalid', '失效', 'closed'], ['all', '全部', 'all']] as const).map(([value, label, tone]) =>
+          <button key={value} className={`category-pill order-filter order-tone-${tone} ${view === value ? 'active' : ''}`}
+            aria-pressed={view === value} disabled={disabled} data-syslog={`coupon.filter.${value}`}
+            onClick={() => { setView(value); setPage(1); }}>{label} ({counts[value]})</button>)}
+        <button className="btn-secondary" disabled={loading || disabled} data-syslog="coupon.refresh" onClick={() => void reload()}><RefreshCw size={14} />重新整理</button>
+      </div>
+      <div className="coupon-filterbar">
+        <div className="search-wrapper order-search"><Search size={18} className="search-icon" />
+          <input className="search-input" aria-label="搜尋優惠券" placeholder="搜尋類型、名稱、金額" value={listQuery} disabled={disabled}
+            onChange={e => { setListQuery(e.target.value); setPage(1); }} /></div>
       </div>
       {!modal && feedback}
       <p className="coupon-help">起始日 00:00:00 生效，到期日 23:59:59 截止。</p>
-      {loading ? <p className="coupon-empty">載入優惠券中…</p> : !filtered.length ? <p className="coupon-empty">目前沒有{history ? '失效優惠券' : '符合條件的優惠券'}。</p> : <>
+      {loading ? <p className="coupon-empty">載入優惠券中…</p> : !filtered.length ? <p className="coupon-empty">目前沒有符合條件的優惠券。</p> : <>
         <div className="admin-table-container"><table className="admin-table"><thead><tr>
           {([['type', '類型'], ['title', '顯示名稱'], ['discountAmount', '折抵金額'], ['startDate', '有效起始日'], ['endDate', '有效到期日']] as const).map(([key, label]) =>
             <th key={key}><button className="coupon-sort" onClick={() => setSort({ key, ascending: sort.key === key ? !sort.ascending : true })}>{label}{sort.key === key ? sort.ascending ? ' ↑' : ' ↓' : ''}</button></th>)}

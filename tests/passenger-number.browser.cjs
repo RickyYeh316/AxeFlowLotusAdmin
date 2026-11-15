@@ -117,6 +117,29 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     await send('Emulation.setTimezoneOverride',{timezoneId:'America/Los_Angeles'});
     await send('Page.navigate',{url:`http://127.0.0.1:${server.address().port}`});
     await wait(`document.querySelectorAll('tbody tr').length===5`);
+    assert.equal(await run(`document.querySelector('[data-syslog="users.filter.ACTIVE"]').getAttribute('aria-pressed')`),'true');
+    await run(`fixture.users[1].data.accountStatus='BANNED';fixture.users[2].data.accountStatus='DELETED';fixture.users[3].data.accountStatus='UNKNOWN';reemitUsers()`);
+    await wait(`document.querySelectorAll('tbody tr').length===2`);
+    const accountCases=[['ACTIVE','啟用 (2)',2,'rgb(102, 178, 146)'],['BANNED','停用 (1)',1,'rgb(214, 179, 92)'],['DELETED','封存 (1)',1,'rgb(196, 123, 139)'],['ALL','全部 (5)',5,'rgb(129, 147, 171)']];
+    for(const [status,label,count,color] of accountCases){
+      await run(`document.querySelector('[data-syslog="users.filter.${status}"]').click()`);
+      await wait(`document.querySelectorAll('tbody tr').length===${count}`);
+      assert.equal(await run(`document.querySelector('[data-syslog="users.filter.${status}"]').textContent`),label);
+      await wait(`document.querySelector('[data-syslog="users.filter.${status}"]').getAttribute('aria-pressed')==='true' && getComputedStyle(document.querySelector('[data-syslog="users.filter.${status}"]')).backgroundColor===${JSON.stringify(color)}`);
+    }
+    await fill('.search-input','乘客2');await wait(`document.querySelectorAll('tbody tr').length===1`);
+    assert.equal(await run(`document.querySelector('[data-syslog="users.filter.ALL"]').textContent`),'全部 (5)');
+    await run(`document.querySelector('[data-syslog="users.filter.ACTIVE"]').click()`);
+    await wait(`document.body.innerText.includes('找不到符合篩選條件的乘客')`);
+    await run(`document.querySelector('[data-syslog="users.filter.DELETED"]').click()`);
+    await wait(`document.querySelectorAll('tbody tr').length===1`);
+    await fill('.search-input','');
+    await run(`fixture.users.forEach(u=>u.data.accountStatus='ACTIVE');reemitUsers()`);
+    await run(`document.querySelector('[data-syslog="users.filter.ACTIVE"]').click()`);
+    await wait(`document.querySelectorAll('tbody tr').length===5`);
+    assert.equal(await run(`!!document.querySelector('[data-syslog="users.currentOrder.filter"]')`),false);
+    assert.equal(await run(`document.querySelector('.search-wrapper').getBoundingClientRect().top>=document.querySelector('.order-status-toolbar').getBoundingClientRect().bottom`),true);
+    console.log('PASS: 乘客分類預設啟用、四類筆數與共用配色、未知值歸全部、分類與搜尋交集、獨立搜尋列。');
     // 缺值、空白、無效型別及載入失敗皆顯示本機預設頭像；新網址可恢復。
     await run(`fixture.users.forEach((u,i)=>{u.data.pictureUrl=[undefined,'','  ',42,'/missing-avatar.png'][i]});reemitUsers()`);
     await wait(`[...document.querySelectorAll('.passenger-identity img')].every(i=>i.getAttribute('src')==='/passenger-avatar-default.svg'&&i.complete&&i.naturalWidth>0)`);
@@ -133,10 +156,19 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     assert.equal(await run(`document.querySelector('tbody').textContent.includes('MEMBER-private')`),false);
     assert.equal(await run(`document.querySelector('tbody').textContent.includes('000123')`),true);
     assert.equal(await run(`document.querySelector('tbody').textContent.includes('—')`),true);
-    for(const number of ['000123','123456','0123456','00001234']) {
-      await fill('input.search-input',number);await wait(`document.querySelectorAll('tbody tr').length===1`);
-      assert.equal(await run(`document.querySelector('tbody tr .passenger-number').textContent.trim()`),number);
+    for(const [query,expected] of [
+      ['000123',['000123','00001234']],
+      ['123456',['123456','0123456']],
+      ['0123456',['0123456']],
+      ['00001234',['00001234']],
+      ['123',['000123','123456','0123456','00001234']],
+      ['  456  ',['123456','0123456']],
+      ['999',[]],
+    ]) {
+      await fill('input.search-input',query);await wait(`document.querySelectorAll('tbody tr').length===${expected.length}`);
+      assert.deepEqual(await run(`[...document.querySelectorAll('tbody tr .passenger-number')].map(el=>el.textContent.trim()).sort()`),expected.sort());
     }
+    console.log('PASS: 乘客編號部分搜尋、重疊編號全部命中、前導零與六七八碼、空白修剪、無匹配。');
     await fill('input.search-input','MEMBER-private');await wait(`document.querySelectorAll('tbody tr').length===0`);
     await fill('input.search-input','');await wait(`document.querySelectorAll('tbody tr').length===5`);
     await wait(`document.querySelector('tbody tr .passenger-count')?.textContent==='20'`);
@@ -170,11 +202,9 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
       assert.equal(await run(`document.querySelector('.passenger-current-order .order-status').classList.contains('order-tone-${group}')`),true);
       assert.equal(await run(`getComputedStyle(document.querySelector('.passenger-current-order .order-status')).borderColor`),group==='serving'?'rgb(102, 178, 146)':'rgb(214, 179, 92)');
     }
-    await fill('[data-syslog="users.currentOrder.filter"]','serving');await wait(`document.querySelectorAll('tbody tr').length===2`);
-    await run(`fixture.orders[0].data.status='NO_SHOW';emitOrder('order-private-0')`);await wait(`document.querySelectorAll('tbody tr').length===1`);
-    await fill('[data-syslog="users.currentOrder.filter"]','waiting');await wait(`document.querySelectorAll('tbody tr').length===1&&document.querySelector('tbody').textContent.includes('乘客0')`);
-    await fill('[data-syslog="users.currentOrder.filter"]','none');await wait(`document.querySelectorAll('tbody tr').length===3`);
-    await fill('[data-syslog="users.currentOrder.filter"]','ALL');await wait(`document.querySelectorAll('tbody tr').length===5`);
+    await run(`fixture.orders[0].data.status='NO_SHOW';emitOrder('order-private-0')`);
+    await wait(`document.querySelector('.passenger-current-order').textContent.trim()==='乘客未出現／待乘客決定'`);
+    assert.equal(await run(`document.querySelectorAll('tbody tr').length`),5);
     await run(`document.querySelector('[data-syslog="users.sort.currentOrder"]').click()`);
     await wait(`!!document.querySelector('[data-syslog="users.sort.currentOrder"] svg')`);
     const labels=await run(`[...document.querySelectorAll('.passenger-current-order')].map(el=>el.textContent.trim())`);
@@ -244,6 +274,7 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     if(process.argv.includes('--users-only')){console.log('PASS: 390px長姓名／表格橫捲與統計sysLog，無會員內碼／姓名內容。Screenshots: '+temp);return;}
     await run(`fixture.users[0].data.passengerName='乘客0';reemitUsers()`);
     await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+    await run(`document.querySelector('[data-syslog="users.filter.ALL"]').click()`);
     await run(`fixture.users[1].data.accountStatus='DELETED';fixture.users[2].data.accountStatus='UNKNOWN';reemitUsers()`);
     await wait(`document.querySelector('tbody').textContent.includes('已封存')`);
     assert.equal(await run(`document.querySelectorAll('tbody button[data-syslog="users.accountStatus.toggle"]:disabled').length`),1);

@@ -1,5 +1,30 @@
 # LotusAH — Web 管理介面
 
+## 11/15 優惠券結帳身分欄排版與排序
+
+已對齊訂單管理：第一行顯示乘客姓名／編號，第二行顯示白底紅字車牌及司機姓名。乘客姓名、乘客編號、車號司機提供三個獨立升降冪排序入口；排序圖示跟隨目前欄位，切排序回第一頁。未結帳為五欄，已結帳／全部為六欄（增加結帳時間）；預設仍依使用時間新到舊。
+
+僅修改 wA 顯示及排序，沿用既有分類、搜尋、合計與整批結帳流程。正式建置／TypeScript、定向 lint（零 error、兩個既有 warning）、完整隔離 Chrome 回歸通過，桌面及 390px 確認視窗已目視。2026/11/15 18:41:41（Asia/Taipei）回讀 `build-2026-11-15-016` READY、rollout SUCCEEDED、100% 流量；8 個 Next 資產 HTTP 200，46 份 src／public 發布來源與本機一致。21 支 FF、Rules、完整 dispatch 設定、LIFF Hosting、customer backend 及 admin codebase／rolloutPolicy 維持部署前基線。未操作正式結帳；本批 Ready 人工驗收待回報。前批 actionBar／filterBar 已由 Ready 回報 TEST PASS。Git 全程唯讀。
+
+## 優惠券 actionBar／filterBar 一致化（11/15）
+
+優惠券管理採「有效／失效／全部／重新整理」，綠／紅／灰藍、預設有效；分類筆數獨立於搜尋，下一列可模糊搜尋類型、名稱及金額。沿既有模板分類規則，Type 1 與草稿留在有效分類。
+
+優惠券結帳採「未結帳／已結帳／全部／重新整理」，同配色且預設未結帳。選取分類旁顯示司機下拉「全部司機／車牌（張數）」，以 driverId 識別；切分類清除司機選取並回第一頁。下方統一搜尋司機姓名／車牌、乘客姓名／編號、優惠券名稱及訂單編號；已結帳／全部另有結帳時間模糊搜尋，依 Asia/Taipei 顯示文字比對，支援日期斜線或連字號。未結帳省略結帳時間搜尋與表格欄位。
+
+三分類皆顯示「查詢合計：xxx 元　共 N 張」，取分類、司機與搜尋交集的完整結果，包含其他頁。未結帳選定單一司機且仍顯示其完整待結批次才可結帳；搜尋排掉部分券時停用結帳並提示清除搜尋。保留後端整批預覽、版本核對、原操作重試與回應遺失防重流程。右上新增草稿／結帳樣式保持。
+
+本輪僅修改／部署 wA；2026/11/15 17:58:33（Asia/Taipei）回讀 `build-2026-11-15-015` READY、rollout SUCCEEDED、100% 流量。46 份 src／public 發布來源與本機一致，8 個 Next 資產 HTTP 200 且新版 JS 含兩頁分類與搜尋。21 支 FF、Rules、完整 dispatch 設定、LIFF Hosting `2597fb24e32f8a90`、customer backend、admin codebase／rolloutPolicy 均維持部署前基線。
+
+正式 Next build／TypeScript、優惠券管理及優惠券結帳兩套完整隔離 Chrome fixture 通過；桌面與 390px 畫面已目視。驗證分類／司機計數、全文搜尋、結帳時間、未結帳六欄、完整合計、部分批次阻擋，以及原發券／預覽變動／回應遺失重試／登出隔離。Auth／FS／HTTP 使用隔離替身，未操作正式發券或結帳；Ready 已回報本批 TEST PASS。定向 ESLint 無 error；全專案 lint 仍有既存錯誤，未列為通過。Git 全程唯讀。
+
+## 乘客分類列一致化（11/15）
+
+乘客列表依訂單管理配置為標題、分類工具列、獨立姓名／編號搜尋列、表格及共用分頁。分類依序為「啟用／停用／封存／全部」，預設 ACTIVE；分別沿用訂單綠／黃／紅／灰藍 theme，選取實底、未選取描邊，各類顯示筆數，重新整理接在同列。分類筆數不受搜尋影響，標題顯示分類與搜尋交集的筆數；未知帳號值只在全部呈現。姓名與外顯乘客編號均採部分字串比對（忽略前後空白），編號保留前導零；與訂單管理搜尋一致。
+
+移除 LINE LIFF 說明副標、帳號下拉與當前訂單下拉；當前訂單欄位、監聽及排序保留。既有停用／啟用／封存與分頁行為保持。分類點擊沿既有 sysLog 記 users.filter.*，不寫入業務資料。本輪僅 wA UI；後端／LIFF／AOS 契約保持。部署與人工驗收狀態見最新交接。
+
+
 ## 會員封存（11/15）
 
 UserManager 對 ACTIVE／BANNED 提供「封存」，沿看詳細的 table-action-button；DELETED 顯示已封存與操作「—」。ArchiveMemberDialog 顯示姓名／編號、不可逆及重新註冊說明，焦點置於標題。精確讀取會員版本後呼叫既有 DELETE_MEMBER；後端與未完成訂單系統取消、解除 LINE mapping 同交易提交。結果不明保留原會員／版本供重試，忙碌及待確認時阻擋取消；切換管理員關閉視窗並隔離晚到回應。
@@ -40,12 +65,12 @@ UserManager 以 accountStatus 精確顯示 ACTIVE正常啟用／BANNED已停權�
 - 乘客列表「叫車行程」改為「當前訂單」，只跟隨 users.currentOrderId；逐份監聽對應 orders 文件，核對 userId，不查最新或歷史訂單。名單的關聯改變／重新整理時重建監聽，離頁與換帳號撤除，晚回應不更新畫面。
 - 與訂單管理共用 orderGroup／orderStatusText 及 order-tone CSS，具體子狀態文案一致；服務中綠、待處理黃。無關聯或關聯單已完成／乘客取消／系統取消顯示「—」，不留紅色已結束狀態。
 - 讀取中「…」、讀失敗明示並可重試；關聯單不存在、會員不符、無法識別的狀態顯示中性「訂單狀態待確認」。預約沿既有 reservationState 文案，不新增訂單狀態。
-- 上方篩選同步改為全部／無當前訂單／服務中／待處理／狀態待確認，排序使用實際顯示文案；篩選結果隨訂單變更更新，頁碼縮減時回到有效頁。帳號權限與管理操作見頁首。
+- 上方當前訂單下拉已移除，改用頁首帳號分類列；欄位排序仍使用實際顯示文案，欄位隨訂單變更更新。帳號權限與管理操作見頁首。
 - 沿 loggedFirestore 記錄監聽及錯誤，補當前訂單 ENTITY_STATE（orderId／status，無乘客姓名或查詢名單）及畫面讀取狀態；無新增 FF／Rules／雲端資料寫入。部署與驗收見 root 交接。
 
 ## 乘客列表與目前統計（11/15）
 
-- 姓名／編號合欄並保留頭像；姓名與編號各自可排序。搜尋姓名或完整外顯編號，保留前導零。電話欄／排序／搜尋退場，users.phoneNumber 已退場。
+- 姓名／編號合欄並保留頭像；姓名與編號各自可排序。搜尋姓名或部分外顯編號，保留前導零。電話欄／排序／搜尋退場，users.phoneNumber 已退場。
 - 完成搭乘／棄單／未出現由 webAdmin.PASSENGER_COUNTS 讀 `_dispatch_passenger_counts/{會員內碼}` 的 completedTripCount／cancelAfterAcceptCount／noShowCount。這是目前新核心累計，訂單與卡片仍讀當時快照。缺文件「—」、有效零值「0」、讀取中「…」、失敗明示並可重試。
 - 乘客名單沿既有 users 監聽；取得名單與重新整理時，按每批 100 人讀統計。統計集合不額外監聽；重新整理可取得最新值。姓名／編號、搜尋、篩選及每頁 10 人保留。換帳號、離頁及較新名單使舊回應失效。
 - 註冊時間固定 Asia/Taipei，格式 yyyy/MM/dd HH:mm:ss。窄版表格橫向捲動；當前訂單接線見頁首，帳號權限與管理操作見頁首。
@@ -100,7 +125,7 @@ UserManager 以 accountStatus 精確顯示 ACTIVE正常啟用／BANNED已停權�
 ## 11/13 乘客外顯編號
 
 - 乘客列表／排序／搜尋、訂單乘客資訊／搜尋、手動叫車乘客選單、發券選單／確認，以及優惠券結帳的乘客欄／搜尋，使用`passengerNumber`外顯字串；不在畫面顯示乘客內碼。
-- `src/lib/passengerNumber.ts`接受6～8碼、保留前導零，缺值或錯型別顯示「—」；乘客列表編號搜尋採完整字串相等、姓名部分比對；電話搜尋已於 11/15 退場，訂單列表編號部分比對見頁首 hotfix。
+- `src/lib/passengerNumber.ts`接受6～8碼、保留前導零，缺值或錯型別顯示「—」；乘客列表姓名與編號搜尋均採部分比對；電話搜尋已於 11/15 退場，訂單列表編號部分比對見頁首 hotfix。
 - React key、option value、API payload、訂單及券關聯繼續使用內碼。訂單沿既有users監聽查表；發券USERS與COUPON_LEDGER由webAdmin追加唯讀passengerNumber，沿原會員讀取，不新增查詢或修改帳務。
 - Next.js16.2.12正式build與三套Chrome fixture通過：`tests/passenger-number.browser.cjs`、`coupon-manager.browser.cjs`、`coupon-settlement.browser.cjs`；後端22項Emulator通過。前導零／六七八碼精確搜尋／缺號／內碼操作保持均有驗證。測試資料隔離，未代操作正式發券／派車／結帳。
 - 發布與人工確認狀態見Lotus root交接及11/13日誌。
@@ -108,10 +133,10 @@ UserManager 以 accountStatus 精確顯示 ACTIVE正常啟用／BANNED已停權�
 
 ## 11/12 優惠券結帳
 
-- `src/components/CouponSettlementManager.tsx`：新側邊選單／tab「優惠券結帳」，整體沿優惠券管理；分類及搜尋重用訂單管理既有CSS。預設未結帳，七欄包含結帳時間；可依司機／乘客／券名／訂單編號搜尋，使用時間預設新到舊。
-- 讀完後端全部帳本分段才顯示完整合計，畫面每頁10筆。司機姓名／車牌搜尋後必須點候選人，唯有單一司機＋未結帳＋有待結款才啟用右上結帳。乘客查詢及已結帳／全部唯讀。右上結帳按鈕停用時採灰底灰字、無光暈與hover位移，啟用維持紫色；CSS限定.checkout-action，不改其他主按鈕或資格判斷；此小修19:12:05已發布build-2026-11-12-002，正式build／既有Chrome回歸與線上回讀通過。
+- `src/components/CouponSettlementManager.tsx`：新側邊選單／tab「優惠券結帳」，整體沿優惠券管理；分類及搜尋重用訂單管理既有CSS。預設未結帳五欄，已結帳／全部六欄含結帳時間；身分欄採訂單管理雙行排版，姓名／編號／車號司機各自可排序；11/15改為分類旁司機下拉與統一文字搜尋，使用時間預設新到舊。
+- 讀完後端全部帳本分段才顯示完整合計，畫面每頁10筆。司機由分類旁下拉選定，唯有單一司機＋未結帳＋有待結款且搜尋結果涵蓋其完整待結批次才啟用右上結帳；已結帳／全部唯讀。右上結帳按鈕停用時採灰底灰字、無光暈與hover位移，啟用維持紫色；CSS限定.checkout-action，不改其他主按鈕或資格判斷；此小修19:12:05已發布build-2026-11-12-002，正式build／既有Chrome回歸與線上回讀通過。
 - `COUPON_CHECKOUT_PREVIEW`核對整批總額與張數，確認框付現後送`COUPON_CHECKOUT`。批次版本變動由後端拒絕；原operationId與review保存在本人sessionStorage，回應不明時保留並只允許重試，重整不自動送出。登入切換隔離晚回覆。
-- 時間沿既有batch.settledAt，顯示台灣年月日時分秒；未結帳標示未結帳。AOS進頁一次讀取保持，退出再進才更新。
+- 時間沿既有batch.settledAt，顯示台灣年月日時分秒；未結帳分類省略結帳時間欄位；全部分類中的未結帳列標示未結帳。AOS進頁一次讀取保持，退出再進才更新。
 - 以Node22執行`node tests/coupon-settlement.browser.cjs`，使用實際元件／adminApi／建置CSS與隔離Auth／HTTP fixture、headless Chrome；驗證搜尋、完整合計、同名司機、資格、預覽變動、重載回放、拒絕、時間、390px確認框及登入隔離。另執行原`tests/coupon-manager.browser.cjs`回歸。
 - 11/12正式build及上述兩套Chrome fixture通過，桌面與390px截圖已目視。11/12 webadmin-00009-rol及AH build-2026-11-12-001已部署，ACTIVE／100%流量、8個線上資產與HTTP門禁回讀通過；Ready真人驗收待進行，未操作正式結帳資料。
 
@@ -152,7 +177,7 @@ AH 既有畫面與讀寫流程已於 11/11 初步盤點；登入門禁、正式�
 
 ## 優惠券管理（11/11）
 
-- `MarketingManager.tsx`：新增優惠券草稿、草稿編輯／刪除、Type1設定與啟停、Type3指定乘客發券、目前／歷史列表；Type2全體發券確認、背景進度輪詢與中斷重試。
+- `MarketingManager.tsx`：新增優惠券草稿、草稿編輯／刪除、Type1設定與啟停、Type3指定乘客發券、有效／失效／全部列表；Type2全體發券確認、背景進度輪詢與中斷重試。
 - `src/lib/adminApi.ts`：Google Firebase token呼叫asia-east1的webAdmin；固定AH Origin由後端允許。券模板不再由Client寫Firestore，規則／交易請對照FBase Lotus functions/src/admin／coupons README。
 - Type2每模板只全發一次；僅有效正式乘客，開始後新戶不補發。發券由後端分批執行，關頁仍繼續；畫面每5秒更新發送／略過數，FAILED可重試同一工作。Type2／3發券可勾選「通知乘客」（預設勾），下方顯示後端產生的實際訊息；取消勾選收起預覽。配券成功後通知，失敗不補送；連結導到本人「我的優惠券」。發布／真人驗收見root交接。
 - 每次mutation保留operationId與完整請求於sessionStorage；連線結果待確認時鎖定其他異動，可重試原操作，重整／換頁仍可恢復。不要手動清除待確認操作後重發券。

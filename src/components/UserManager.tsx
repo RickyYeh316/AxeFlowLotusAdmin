@@ -197,15 +197,20 @@ export default function UserManager() {
   };
 
   // Filtering States
-  const [accountFilter, setAccountFilter] = useState<string>('ALL');
-  const [currentOrderFilter, setCurrentOrderFilter] = useState<string>('ALL');
+  const [accountFilter, setAccountFilter] = useState<string>('ACTIVE');
+  const accountCounts = useMemo(() => ({
+    ACTIVE: users.filter(user => user.accountStatus === UserAccountStatus.ACTIVE).length,
+    BANNED: users.filter(user => user.accountStatus === UserAccountStatus.BANNED).length,
+    DELETED: users.filter(user => user.accountStatus === UserAccountStatus.DELETED).length,
+    ALL: users.length,
+  }), [users]);
 
   // Filter users based on search & status
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
       const searchLower = searchQuery.trim().toLowerCase();
       const nameMatch = user.passengerName.toLowerCase().includes(searchLower);
-      const idMatch = passengerNumber(user.passengerNumber) === searchLower;
+      const idMatch = passengerNumber(user.passengerNumber).includes(searchLower);
       const matchesSearch = nameMatch || idMatch;
 
       let matchesAccount = true;
@@ -213,11 +218,9 @@ export default function UserManager() {
         matchesAccount = user.accountStatus === accountFilter;
       }
 
-      const matchesCurrentOrder = currentOrderFilter === 'ALL'
-        || currentOrderViews.get(user.userId)?.group === currentOrderFilter;
-      return matchesSearch && matchesAccount && matchesCurrentOrder;
+      return matchesSearch && matchesAccount;
     });
-  }, [users, searchQuery, accountFilter, currentOrderFilter, currentOrderViews]);
+  }, [users, searchQuery, accountFilter]);
 
   const handleToggleBan = async (user: User) => {
     const owner = auth.currentUser?.uid;
@@ -306,78 +309,32 @@ export default function UserManager() {
   return (
     <div className="glass content-sheet animate-fade-in passenger-sheet">
       <div className="sheet-title-row">
-        <div>
+        <div className="order-title-content">
           <h2 className="sheet-title">乘客管理 ({filteredUsers.length})</h2>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 4 }}>
-            所有透過 LINE LIFF 授權登入的乘客
-          </p>
+          <div className="order-status-toolbar">
+            {([['ACTIVE', '啟用', 'serving'], ['BANNED', '停用', 'waiting'], ['DELETED', '封存', 'closed'], ['ALL', '全部', 'all']] as const).map(([value, label, tone]) => (
+              <div key={value} className={`order-filter-group order-tone-${tone}`}>
+                <button type="button" data-syslog={`users.filter.${value}`}
+                  aria-pressed={accountFilter === value}
+                  onClick={() => { setAccountFilter(value); setCurrentPage(1); }}
+                  className={`category-pill order-filter order-tone-${tone} ${accountFilter === value ? 'active' : ''}`}>
+                  {label}{!loading && !loadError && ` (${accountCounts[value]})`}
+                </button>
+              </div>
+            ))}
+            <button type="button" className="btn-secondary" data-syslog="users.reload"
+              onClick={() => setReloadKey(key => key + 1)} disabled={loading || countsLoading || ordersLoading}>
+              <RefreshCw size={14} /> 重新整理
+            </button>
+          </div>
         </div>
-        
-        {/* Search Bar */}
-        <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* Account Status Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-            <span>帳號狀態:</span>
-            <select 
-              value={accountFilter}
-              onChange={(e) => { setAccountFilter(e.target.value); setCurrentPage(1); }}
-              style={{
-                background: 'rgba(255, 255, 255, 0.03)',
-                border: '1px solid var(--border-color)',
-                borderRadius: 6,
-                padding: '6px 12px',
-                color: 'var(--text-primary)',
-                fontSize: '0.8rem',
-                outline: 'none',
-                cursor: 'pointer'
-              }}
-            >
-              <option value="ALL" style={{ background: '#0c0d14' }}>全部帳號狀態</option>
-              <option value="ACTIVE" style={{ background: '#0c0d14' }}>啟用正常 (ACTIVE)</option>
-              <option value="DELETED" style={{background: '#0c0d14'}}>已封存 (DELETED)</option>
-              <option value="BANNED" style={{ background: '#0c0d14' }}>限制停權 (BANNED)</option>
-            </select>
-          </div>
-
-          {/* Current Order Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-            <span>當前訂單:</span>
-            <select 
-              value={currentOrderFilter}
-              data-syslog="users.currentOrder.filter"
-              onChange={(e) => { setCurrentOrderFilter(e.target.value); setCurrentPage(1); }}
-              style={{
-                background: 'rgba(255, 255, 255, 0.03)',
-                border: '1px solid var(--border-color)',
-                borderRadius: 6,
-                padding: '6px 12px',
-                color: 'var(--text-primary)',
-                fontSize: '0.8rem',
-                outline: 'none',
-                cursor: 'pointer'
-              }}
-            >
-              <option value="ALL" style={{ background: '#0c0d14' }}>全部當前訂單</option>
-              <option value="none" style={{ background: '#0c0d14' }}>無當前訂單</option>
-              <option value="serving" style={{ background: '#0c0d14' }}>服務中</option>
-              <option value="waiting" style={{ background: '#0c0d14' }}>待處理</option>
-              <option value="unknown" style={{ background: '#0c0d14' }}>狀態待確認</option>
-            </select>
-          </div>
-
-          <div className="search-wrapper" style={{ width: 280 }}>
-            <Search size={16} className="search-icon" />
-            <input 
-              type="text" 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜尋姓名或乘客編號"
-              className="search-input"
-            />
-          </div>
-          <button className="btn-secondary" data-syslog="users.reload" onClick={() => setReloadKey(key => key + 1)} disabled={loading || countsLoading || ordersLoading}>
-            <RefreshCw size={16} /> 重新整理
-          </button>
+      </div>
+      <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="search-wrapper order-search">
+          <Search size={16} className="search-icon" />
+          <input type="text" value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="搜尋姓名或乘客編號" className="search-input" />
         </div>
       </div>
 
@@ -389,7 +346,7 @@ export default function UserManager() {
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>載入乘客名單中...</div>
       ) : filteredUsers.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-          {searchQuery || accountFilter !== 'ALL' || currentOrderFilter !== 'ALL' ? '找不到符合篩選條件的乘客。' : '目前尚無註冊乘客。'}
+          {searchQuery || accountFilter !== 'ALL' ? '找不到符合篩選條件的乘客。' : '目前尚無註冊乘客。'}
         </div>
       ) : (
         <div className="admin-table-container">

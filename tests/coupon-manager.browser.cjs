@@ -78,16 +78,23 @@ window.fetch=async(url,options)=>{
     await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
     await send('Page.navigate',{url:`http://127.0.0.1:${server.address().port}`});
     await wait(`document.querySelector('tbody')?.textContent.includes('新戶優惠券')`);
-    assert.equal(await run(`new Set([...document.querySelectorAll('.coupon-toolbar > button')].map(b=>b.getBoundingClientRect().height)).size`),1);
-    assert.equal(await run(`(()=>{const b=document.querySelector('.coupon-toolbar > button:last-child');const icon=b.querySelector('svg').getBoundingClientRect();const r=new Range();r.selectNode(b.lastChild);const text=r.getBoundingClientRect();return Math.abs((icon.top+icon.bottom-text.top-text.bottom)/2)<2})()`),true);
+    assert.equal(await run(`new Set([...document.querySelectorAll('.order-status-toolbar > .category-pill')].map(b=>b.getBoundingClientRect().height)).size`),1);
+    assert.equal(await run(`(()=>{const b=document.querySelector('.order-status-toolbar > button:last-child');const icon=b.querySelector('svg').getBoundingClientRect();const r=new Range();r.selectNode(b.lastChild);const text=r.getBoundingClientRect();return Math.abs((icon.top+icon.bottom-text.top-text.bottom)/2)<2})()`),true);
     for (const size of ['100','20','50','10']) {
       await fill('[aria-label="每頁顯示筆數"]',size);
       await wait(`document.querySelector('[aria-label="每頁顯示筆數"]')?.value==='${size}'`);
       assert.equal(await run(`document.querySelectorAll('.list-pagination button:disabled').length`),2);
     }
     assert.equal(await run(`document.querySelector('tbody').textContent.includes('刪除')`),false);
-    await click('失效優惠券');await wait(`document.querySelector('tbody')?.textContent.includes('過期補償券')`);
-    await click('有效優惠券');await click('新增優惠券草稿');await wait(`!!document.querySelector('[role=dialog]')`);
+    await run(`document.querySelector('[data-syslog="coupon.filter.invalid"]').click()`);await wait(`document.querySelector('tbody')?.textContent.includes('過期補償券')`);
+    await run(`document.querySelector('[data-syslog="coupon.filter.all"]').click()`);
+    await wait(`document.querySelectorAll('tbody tr').length===2`);
+    await fill('[aria-label="搜尋優惠券"]','補償');await wait(`document.querySelectorAll('tbody tr').length===1`);
+    assert.equal(await run(`document.querySelector('[data-syslog="coupon.filter.all"]').textContent`),'全部 (2)');
+    await fill('[aria-label="搜尋優惠券"]','100');await wait(`document.querySelector('tbody')?.textContent.includes('新戶優惠券')`);
+    await fill('[aria-label="搜尋優惠券"]','不存在');await wait(`!document.querySelector('tbody')`);
+    await fill('[aria-label="搜尋優惠券"]','');
+    await run(`document.querySelector('[data-syslog="coupon.filter.valid"]').click()`);await click('新增優惠券草稿');await wait(`!!document.querySelector('[role=dialog]')`);
     assert.equal(await run(`document.querySelector('[role=dialog]').textContent.includes('最低消費')`),false);
     await fill('input[maxlength="256"]','2027來花蓮跨年・這是一個測試長名稱與各端視覺呈現的補償優惠券');
     await fill('input[type=number]','80');

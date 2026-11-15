@@ -68,6 +68,7 @@ window.fetch=async(url,options)=>{
     const run=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});assert.equal(r.exceptionDetails,undefined,JSON.stringify(r.exceptionDetails));return r.result.value;};
     const wait=async expression=>{for(let i=0;i<250;i++){if(await run(expression))return;await new Promise(r=>setTimeout(r,30));}assert.fail(expression);};
     const click=label=>run(`[...document.querySelectorAll('button')].find(b=>b.textContent===${JSON.stringify(label)}).click()`);
+    const category=value=>run(`document.querySelector('[data-syslog="settlement.filter.${value}"]').click()`);
     const fill=async(selector,value)=>{await run(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(el instanceof HTMLSelectElement?HTMLSelectElement.prototype:el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));})()`);};
     await send('Runtime.enable');await send('Page.enable');
     await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
@@ -81,22 +82,53 @@ window.fetch=async(url,options)=>{
     }
     const enabled = () => run(`[...document.querySelectorAll('button')].find(b=>b.textContent==='結帳').disabled===false`);
     assert.equal(await enabled(),false);
-    assert.equal(await run(`document.querySelectorAll('th').length`),7);
+    assert.equal(await run(`document.querySelectorAll('th').length`),5);
     assert.equal(await run(`document.querySelector('.checkout-summary').textContent.includes('650 元')`),true);
-    assert.equal(await run(`document.querySelector('[aria-pressed=true]').textContent`),'未結帳');
+    assert.equal(await run(`document.querySelector('[aria-pressed=true]').textContent`),'未結帳 (13)');
+    await run(`rows.forEach((r,i)=>r.driverName=i===12?'Z driver':'A driver')`);
+    await click('重新整理');await wait(`document.querySelector('tbody').textContent.includes('Z driver')`);
+    for (const [key,selector,ascendingFirst,descendingFirst] of [
+      ['passengerName','.order-passenger strong','Bruce','Jessica'],
+      ['passengerNumber','.order-passenger-number','000123','000135'],
+      ['driverName','.order-driver','TEA-5596A driver','XYZ-123Z driver']
+    ]) {
+      await click('下一頁');
+      await run(`document.querySelector('[data-syslog="settlement.sort.${key}"]').click()`);
+      await wait(`document.querySelectorAll('tbody tr').length===10`);
+      assert.equal(await run(`document.querySelector(${JSON.stringify('tbody '+selector)}).textContent.replace(/\\s+/g,' ').trim()`),ascendingFirst);
+      assert.equal(await run(`document.querySelectorAll('.checkout-identity-heading svg').length`),1);
+      assert.equal(await run(`document.querySelector('[data-syslog="settlement.sort.${key}"] svg').classList.contains('lucide-chevron-up')`),true);
+      await run(`document.querySelector('[data-syslog="settlement.sort.${key}"]').click()`);
+      assert.equal(await run(`document.querySelector(${JSON.stringify('tbody '+selector)}).textContent.replace(/\\s+/g,' ').trim()`),descendingFirst);
+      assert.equal(await run(`document.querySelector('[data-syslog="settlement.sort.${key}"] svg').classList.contains('lucide-chevron-down')`),true);
+    }
+    assert.equal(await run(`getComputedStyle(document.querySelector('.order-cell-stack')).flexDirection`),'column');
+    assert.equal(await run(`getComputedStyle(document.querySelector('.order-plate')).backgroundColor`),'rgb(255, 255, 255)');
+    assert.equal(await run(`getComputedStyle(document.querySelector('.order-plate')).color`),'rgb(189, 36, 54)');
+    await run(`rows.forEach(r=>r.driverName='同名司機')`);await click('重新整理');
+    await wait(`document.querySelector('tbody').textContent.includes('同名司機')`);
+    await click('使用時間');await click('使用時間');
     await click('下一頁');assert.equal(await run(`document.querySelectorAll('tbody tr').length`),3);
-    await fill('[aria-label="搜尋欄位"]','passenger');await fill('[aria-label="搜尋內容"]','jess');
+    await fill('[aria-label="搜尋內容"]','jess');
     await wait(`document.querySelectorAll('tbody tr').length===6`);assert.equal(await enabled(),false);
     assert.equal(await run(`document.querySelector('.checkout-summary').textContent.includes('查詢合計：300')`),true);
     await fill('[aria-label="搜尋內容"]','000123');await wait(`document.querySelectorAll('tbody tr').length===1`);
-    assert.equal(await run(`document.querySelector('tbody').textContent.includes('乘客編號：000123')`),true);assert.equal(await enabled(),false);
-    await fill('[aria-label="搜尋欄位"]','order');await fill('[aria-label="搜尋內容"]','#478072');
+    assert.equal(await run(`document.querySelector('.order-passenger-number').textContent==='000123'`),true);assert.equal(await enabled(),false);
+    await fill('[aria-label="搜尋內容"]','#478072');
     await wait(`document.querySelectorAll('tbody tr').length===1`);assert.equal(await enabled(),false);
-    await fill('[aria-label="搜尋欄位"]','driver');await fill('[aria-label="搜尋內容"]','同名');
-    await wait(`document.querySelectorAll('.checkout-candidates button').length===2`);assert.equal(await enabled(),false);
-    await click('同名司機 · TEA-5596');await wait(`document.querySelector('.checkout-selected')!==null`);assert.equal(await enabled(),true);
-    await click('全部');assert.equal(await enabled(),false);await click('已結帳');assert.equal(await enabled(),false);
-    await click('未結帳');assert.equal(await enabled(),true);
+    await fill('[aria-label="搜尋內容"]','同名');
+    await wait(`document.querySelectorAll('[aria-label="篩選司機"] option').length===3`);assert.equal(await enabled(),false);
+    assert.equal(await run(`document.querySelector('option[value="one"]').textContent.trim()`),'TEA-5596 (12)');
+    await fill('[aria-label="篩選司機"]','one');await wait(`[...document.querySelectorAll('button')].find(b=>b.textContent==='結帳').disabled===false`);
+    await fill('[aria-label="搜尋內容"]','Jessica');await wait(`document.querySelectorAll('tbody tr').length===6`);
+    assert.equal(await enabled(),false);assert.equal(await run(`document.body.textContent.includes('僅包含部分優惠券')`),true);
+    await fill('[aria-label="搜尋內容"]','');await wait(`[...document.querySelectorAll('button')].find(b=>b.textContent==='結帳').disabled===false`);
+    await category('all');assert.equal(await enabled(),false);
+    assert.equal(await run(`document.querySelectorAll('th').length`),6);
+    await category('settled');assert.equal(await enabled(),false);
+    assert.equal(await run(`document.querySelectorAll('[aria-label="篩選司機"] option').length`),1);
+    await category('unsettled');await fill('[aria-label="篩選司機"]','one');assert.equal(await enabled(),true);
+    assert.equal(await run(`document.querySelector('[aria-label="搜尋結帳時間"]')===null`),true);
     await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
     fs.writeFileSync(path.join(temp,'desktop.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
     await run('previewDelta=50');await click('結帳');await wait(`document.body.textContent.includes('待結帳資料已更新')`);
@@ -115,10 +147,21 @@ window.fetch=async(url,options)=>{
     await click('重試原操作（不重複結帳）');await wait(`!document.querySelector('[role=dialog]')&&document.body.textContent.includes('已結帳 600 元')`);
     assert.equal(await run(`calls.find(c=>c.action==='COUPON_CHECKOUT').operationId`),operationId);
     assert.equal(await run(`rows.filter(r=>r.settledAt===null).length`),1);
-    await click('已結帳');await wait(`document.querySelectorAll('tbody tr').length===10`);
+    await category('settled');await wait(`document.querySelectorAll('tbody tr').length===10`);
     assert.equal(await run(`document.querySelector('tbody').textContent.includes('2026/11/12 17:50:00')`),true);
     assert.equal(await enabled(),false);
-    await click('未結帳');await fill('[aria-label="搜尋內容"]','XYZ');await click('同名司機 · XYZ-123');
+    assert.equal(await run(`document.querySelectorAll('th').length`),6);
+    await fill('[aria-label="搜尋結帳時間"]','2026-11-12 17:50');await wait(`document.querySelector('.checkout-summary').textContent.includes('600 元')`);
+    await fill('[aria-label="搜尋結帳時間"]','2025');await wait(`!document.querySelector('tbody')`);
+    assert.equal(await run(`document.querySelector('option[value="one"]').textContent.trim()`),'TEA-5596 (12)');
+    await fill('[aria-label="搜尋結帳時間"]','');await category('all');
+    await wait(`document.querySelector('.checkout-summary').textContent.includes('650 元')`);
+    await fill('[aria-label="篩選司機"]','two');await wait(`document.querySelector('.checkout-summary').textContent.includes('50 元')`);
+    await fill('[aria-label="搜尋結帳時間"]','2026');await wait(`!document.querySelector('tbody')`);
+    await category('unsettled');await fill('[aria-label="篩選司機"]','two');
+    await wait(`document.querySelectorAll('tbody tr').length===1`);
+    assert.equal(await run(`document.querySelectorAll('th').length`),5);
+    assert.equal(await run(`document.querySelector('[aria-label="搜尋結帳時間"]')===null`),true);
     await click('結帳');await wait(`!!document.querySelector('[role=dialog]')`);
     await run('rejectCheckout=true');await click('已付現，確認結帳');await wait(`!document.querySelector('[role=dialog]')&&!!document.querySelector('[role=alert]')`);
     assert.equal(await enabled(),false);assert.equal(await run(`sessionStorage.getItem('lotus-coupon-checkout:test-admin')`),null);
@@ -128,7 +171,7 @@ window.fetch=async(url,options)=>{
     assert.equal(await run(`document.querySelector('tbody')===null`),true);assert.equal(await enabled(),false);
     assert.equal(await run(`document.body.textContent.includes('結清')`),false);
     assert.deepEqual(errors,[]);
-    console.log('PASS: 七欄／預設未結帳／完整合計／分頁／乘客與訂單搜尋唯讀／同名司機明確選定／分類資格／預覽金額變動／回應遺失重載後原操作回放／409拒絕／台灣時間／登出晚回覆隔離／390px確認視窗。');
+    console.log('PASS: 分類與司機計數／未結帳五欄／身分雙行排版與三欄升降冪排序／結帳時間模糊搜尋／部分批次阻擋／完整合計／分頁／乘客與訂單搜尋唯讀／同名司機明確選定／分類資格／預覽金額變動／回應遺失重載後原操作回放／409拒絕／台灣時間／登出晚回覆隔離／390px確認視窗。');
     console.log('Screenshots: '+temp);
   } finally {ws?.close();chrome.kill('SIGTERM');await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;});

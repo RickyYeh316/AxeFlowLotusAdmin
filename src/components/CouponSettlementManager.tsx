@@ -6,7 +6,7 @@ import { passengerNumber } from '../lib/passengerNumber';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { Search, RefreshCw, X } from 'lucide-react';
+import { Search, RefreshCw, X, ChevronUp, ChevronDown } from 'lucide-react';
 import { auth } from '../firebase/config';
 import { adminApi, AdminApiError } from '../lib/adminApi';
 
@@ -18,7 +18,6 @@ type Preview = { driverId: string; driverName: string; carPlate: string; review:
 type Pending = { preview: Preview; request: { action: 'COUPON_CHECKOUT'; operationId: string; driverId: string; review: Review } };
 type Cursor = { driverId: string; itemId?: string; batchId?: string; version?: { seconds: number; nanoseconds: number } | null };
 type View = 'unsettled' | 'settled' | 'all';
-type Field = 'driver' | 'passenger' | 'coupon' | 'order';
 const money = (v: number) => v.toLocaleString('zh-TW');
 const date = (v: number) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit',
   day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(v).replaceAll('-', '/');
@@ -27,7 +26,8 @@ const journalKey = (uid: string) => `lotus-coupon-checkout:${uid}`;
 export default function CouponSettlementManager() {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [rows, setRows] = useState<Row[]>([]), [drivers, setDrivers] = useState<Driver[]>([]);
-  const [view, setView] = useState<View>('unsettled'), [field, setField] = useState<Field>('driver');
+  const [view, setView] = useState<View>('unsettled');
+  const [settledTimeQuery, setSettledTimeQuery] = useState('');
   const [query, setQuery] = useState(''), [selected, setSelected] = useState('');
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [signedIn, setSignedIn] = useState(false);
   const [error, setError] = useState(''), [notice, setNotice] = useState('');
@@ -63,7 +63,7 @@ export default function CouponSettlementManager() {
     const unsubscribe = onAuthStateChanged(auth, user => {
       scope.current++; sequence.current++; requestLock.current = false;
       setRows([]); setDrivers([]); setPreview(null); setPending(null); setBusy(false); setSelected(''); setQuery('');
-      setNotice(''); setError(''); setJournalBlocked(false); setSignedIn(!!user);
+      setSettledTimeQuery(''); setNotice(''); setError(''); setJournalBlocked(false); setSignedIn(!!user);
       if (!user) { setLoading(false); setError('請先使用管理員 Google 帳號登入。'); return; }
       try {
         const raw = sessionStorage.getItem(journalKey(user.uid));
@@ -91,24 +91,45 @@ export default function CouponSettlementManager() {
   const locked = !signedIn || busy || pending !== null || journalBlocked;
   const term = query.trim().toLowerCase();
   const chosen = drivers.find(d => d.id === selected);
-  const matches = drivers.filter(d => `${d.name} ${d.carPlate}`.toLowerCase().includes(term));
-  const filtered = useMemo(() => rows.filter(row => {
-    if (view === 'unsettled' && row.settledAt !== null || view === 'settled' && row.settledAt === null) return false;
-    if (field === 'driver') return selected ? row.driverId === selected : `${row.driverName} ${row.carPlate}`.toLowerCase().includes(term);
-    if (field === 'passenger') return row.passengerName.toLowerCase().includes(term) || passengerNumber(row.passengerNumber) === term;
-    const value = field === 'coupon' ? row.name : row.readableId;
-    return value.toLowerCase().includes(field === 'order' ? term.replace(/^#/, '') : term);
-  }), [rows, view, field, selected, term]);
+  const categoryRows = useMemo(() => rows.filter(row => view === 'all'
+    || (row.settledAt === null) === (view === 'unsettled')), [rows, view]);
+  const counts = { unsettled: rows.filter(row => row.settledAt === null).length,
+    settled: rows.filter(row => row.settledAt !== null).length, all: rows.length };
+  const driverOptions = useMemo(() => {
+    const grouped = new Map<string, Driver & { count: number }>();
+    for (const row of categoryRows) {
+      const existing = grouped.get(row.driverId);
+      if (existing) existing.count++;
+      else grouped.set(row.driverId, { id: row.driverId, name: row.driverName, carPlate: row.carPlate, count: 1 });
+    }
+    return [...grouped.values()].sort((a, b) => a.carPlate.localeCompare(b.carPlate, 'zh-TW') || a.id.localeCompare(b.id));
+  }, [categoryRows]);
+  const filtered = useMemo(() => categoryRows.filter(row => {
+    if (selected && row.driverId !== selected) return false;
+    if (term && ![row.driverName, row.carPlate, row.passengerName, passengerNumber(row.passengerNumber), row.name, `#${row.readableId}`]
+      .some(value => value.toLowerCase().includes(term))) return false;
+    const timeTerm = settledTimeQuery.trim().replaceAll('-', '/');
+    return view === 'unsettled' || !timeTerm || (row.settledAt !== null && date(row.settledAt).includes(timeTerm));
+  }), [categoryRows, view, selected, term, settledTimeQuery]);
   const sorted = useMemo(() => [...filtered].sort((a, b) => {
-    const x = a[sort.key], y = b[sort.key];
+    const x = sort.key === 'passengerNumber' ? passengerNumber(a.passengerNumber) : a[sort.key];
+    const y = sort.key === 'passengerNumber' ? passengerNumber(b.passengerNumber) : b[sort.key];
     const compared = typeof x === 'number' && typeof y === 'number' ? x - y
       : x === null ? -1 : y === null ? 1 : String(x).localeCompare(String(y), 'zh-TW');
     return (sort.ascending ? compared : -compared) || a.id.localeCompare(b.id);
   }), [filtered, sort]);
   const total = filtered.reduce((sum, row) => sum + row.amount, 0);
   const pages = Math.max(1, Math.ceil(sorted.length / itemsPerPage)), currentPage = Math.min(page, pages);
-  const canCheckout = !locked && !loading && !error && view === 'unsettled' && field === 'driver' && !!chosen && total > 0;
-  const resetSearch = (value: Field) => { setField(value); setQuery(''); setSelected(''); setPage(1); setNotice(''); };
+  const fullBatchCount = categoryRows.filter(row => row.driverId === selected).length;
+  const partialBatch = !!chosen && view === 'unsettled' && filtered.length !== fullBatchCount;
+  const canCheckout = !locked && !loading && !error && view === 'unsettled' && !!chosen && total > 0 && !partialBatch;
+  const changeView = (value: View) => {
+    setView(value); setSelected(''); setPage(1); setNotice('');
+    if (value === 'unsettled') {
+      setSettledTimeQuery('');
+      if (sort.key === 'settledAt') setSort({ key: 'redeemedAt', ascending: false });
+    }
+  };
 
   const openCheckout = async () => {
     if (!canCheckout || requestLock.current) return;
@@ -153,8 +174,16 @@ export default function CouponSettlementManager() {
     } finally { if (generation === scope.current) { requestLock.current = false; setBusy(false); } }
   };
   const close = () => { if (!busy && !pending) setPreview(null); };
+  const requestSort = (key: keyof Row) => {
+    setSort({ key, ascending: sort.key === key ? !sort.ascending : true }); setPage(1);
+  };
+  const getSortIcon = (key: keyof Row) => {
+    if (sort.key !== key) return null;
+    const Icon = sort.ascending ? ChevronUp : ChevronDown;
+    return <Icon size={14} style={{ display: 'inline', marginLeft: 4, verticalAlign: 'middle' }} />;
+  };
   const headers: [keyof Row, string][] = [['name', '優惠券名稱'], ['amount', '折抵金額'], ['redeemedAt', '使用時間'],
-    ['readableId', '訂單編號'], ['driverName', '司機'], ['passengerName', '乘客'], ['settledAt', '結帳時間']];
+    ['readableId', '訂單編號']];
   const feedback = <>{error && <p role="alert" className="coupon-error">{error}</p>}{notice && <p role="status" className="coupon-help">{notice}</p>}</>;
 
   return <>
@@ -162,39 +191,58 @@ export default function CouponSettlementManager() {
       <div className="sheet-title-row">
         <h2 className="sheet-title">優惠券結帳{loading ? '' : ` (${filtered.length})`}</h2>
         <div className="checkout-action"><button className="btn-primary" disabled={!canCheckout} data-syslog="settlement.open" onClick={() => void openCheckout()}>結帳</button>
-          {!canCheckout && !loading && <span className="coupon-help">請選定單一司機並切至未結帳；有待結款才可結帳。</span>}</div>
+          {!canCheckout && !loading && <span className="coupon-help">{partialBatch ? '搜尋結果僅包含部分優惠券；請清除搜尋條件，核對完整未結帳批次後再結帳。' : '請選定單一司機並切至未結帳；有待結款才可結帳。'}</span>}</div>
       </div>
-      <div className="coupon-toolbar">
-        {([['unsettled', '未結帳'], ['settled', '已結帳'], ['all', '全部']] as const).map(([value, label]) =>
-          <button key={value} className={`category-pill ${view === value ? 'active' : ''}`} aria-pressed={view === value} disabled={locked}
-            onClick={() => { setView(value); setPage(1); }}>{label}</button>)}
+      <div className="order-status-toolbar">
+        {([['unsettled', '未結帳', 'serving'], ['settled', '已結帳', 'closed'], ['all', '全部', 'all']] as const).map(([value, label, tone]) =>
+          <div key={value} className="order-filter-group">
+            <button className={`category-pill order-filter order-tone-${tone} ${view === value ? 'active' : ''}`}
+              aria-pressed={view === value} disabled={locked} data-syslog={`settlement.filter.${value}`}
+              onClick={() => changeView(value)}>{label} ({counts[value]})</button>
+            {view === value && <select className={`order-subcategory order-tone-${tone}`} aria-label="篩選司機" value={selected}
+              disabled={locked || loading} onChange={e => { setSelected(e.target.value); setPage(1); setNotice(''); }}>
+              <option value="">全部司機</option>
+              {driverOptions.map(driver => <option key={driver.id} value={driver.id}>
+                {driver.carPlate || driver.name || '車牌未提供'} ({driver.count})
+              </option>)}
+            </select>}
+          </div>)}
         <button className="btn-secondary" disabled={locked || loading} data-syslog="settlement.refresh" onClick={() => void reload()}><RefreshCw size={14} />重新整理</button>
       </div>
-      <div className="checkout-filters">
-        <label>搜尋欄位 <select className="form-select" aria-label="搜尋欄位" value={field} disabled={locked} onChange={e => resetSearch(e.target.value as Field)}>
-          <option value="driver">司機</option><option value="passenger">乘客</option><option value="coupon">優惠券名稱</option><option value="order">訂單編號</option>
-        </select></label>
-        {chosen && field === 'driver' ? <div className="checkout-selected"><span>{chosen.name} · {chosen.carPlate || '車牌未提供'}</span>
-          <button className="btn-secondary" aria-label="清除司機" disabled={locked} onClick={() => { setSelected(''); setQuery(''); setPage(1); }}><X size={16} /></button></div>
-          : <div className="search-wrapper checkout-search"><span className="search-icon"><Search size={16} /></span>
-            <input className="search-input" aria-label="搜尋內容" value={query} disabled={locked} placeholder={field === 'driver' ? '輸入司機姓名或車牌，再選定司機' : field === 'passenger' ? '輸入乘客姓名或乘客編號' : field === 'coupon' ? '輸入優惠券名稱' : '輸入訂單編號'}
-              onChange={e => { setQuery(e.target.value); setSelected(''); setPage(1); }} /></div>}
+      <div className="coupon-filterbar">
+        <div className="search-wrapper order-search"><Search size={18} className="search-icon" />
+          <input className="search-input" aria-label="搜尋內容" value={query} disabled={locked}
+            placeholder="搜尋司機姓名、車牌、乘客姓名、乘客編號、優惠券名稱、訂單編號"
+            onChange={e => { setQuery(e.target.value); setPage(1); }} /></div>
+        {view !== 'unsettled' && <div className="search-wrapper checkout-time-search"><Search size={18} className="search-icon" />
+          <input className="search-input" aria-label="搜尋結帳時間" placeholder="搜尋結帳時間，例如 2026/11/15"
+            value={settledTimeQuery} disabled={locked} onChange={e => { setSettledTimeQuery(e.target.value); setPage(1); }} /></div>}
       </div>
-      {field === 'driver' && term && !selected && !loading && <div className="checkout-candidates" aria-label="符合的司機">
-        {matches.length ? matches.map(driver => <button key={driver.id} className="btn-secondary" disabled={locked}
-          onClick={() => { setSelected(driver.id); setQuery(''); setPage(1); }}>{driver.name} · {driver.carPlate || driver.id}</button>) : <span className="coupon-help">沒有符合的司機。</span>}
-      </div>}
       {!modalOpen && feedback}
       {loading ? <p className="coupon-empty" role="status">讀取中…</p> : <>
-        {!error && <p className="checkout-summary">{canCheckout ? '待結金額' : view === 'unsettled' && field === 'driver' && !term ? '未結帳合計' : '查詢合計'}：{money(total)} 元　共 {filtered.length} 張</p>}
+        {!error && <p className="checkout-summary">查詢合計：{money(total)} 元　共 {filtered.length} 張</p>}
         {!filtered.length ? <p className="coupon-empty">{error ? '資料尚未完整載入，請重新整理。' : '目前沒有符合條件的優惠券。'}</p> : <>
           <div className="admin-table-container"><table className="admin-table checkout-table"><thead><tr>
-            {headers.map(([key, label]) => <th key={key}><button className="coupon-sort" onClick={() => { setSort({ key, ascending: sort.key === key ? !sort.ascending : true }); setPage(1); }}>
-              {label}{sort.key === key ? sort.ascending ? ' ↑' : ' ↓' : ''}</button></th>)}
+            {headers.map(([key, label]) => <th key={key}><button className="coupon-sort" onClick={() => requestSort(key)}>
+              {label}{getSortIcon(key)}</button></th>)}
+            <th className="checkout-identity-heading">
+              <div className="passenger-heading">
+                <button data-syslog="settlement.sort.passengerName" onClick={() => requestSort('passengerName')}>乘客姓名{getSortIcon('passengerName')}</button>
+                <span>/</span>
+                <button data-syslog="settlement.sort.passengerNumber" onClick={() => requestSort('passengerNumber')}>編號{getSortIcon('passengerNumber')}</button>
+              </div>
+              <button className="coupon-sort" data-syslog="settlement.sort.driverName" onClick={() => requestSort('driverName')}>車號司機{getSortIcon('driverName')}</button>
+            </th>
+            {view !== 'unsettled' && <th><button className="coupon-sort" onClick={() => requestSort('settledAt')}>結帳時間{getSortIcon('settledAt')}</button></th>}
           </tr></thead><tbody>{sorted.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map(row => <tr key={row.id}>
             <td className="coupon-name">{row.name}</td><td>{money(row.amount)} 元</td><td>{date(row.redeemedAt)}</td>
-            <td>{row.readableId ? `#${row.readableId}` : '尚未提供'}</td><td>{row.driverName}<p className="coupon-help">{row.carPlate || '車牌未提供'}</p></td>
-            <td>{row.passengerName}<p className="coupon-help">乘客編號：{passengerNumber(row.passengerNumber) || '—'}</p></td><td>{row.settledAt === null ? '未結帳' : date(row.settledAt)}</td>
+            <td>{row.readableId ? `#${row.readableId}` : '尚未提供'}</td>
+            <td><div className="order-cell-stack">
+              <div className="order-passenger"><strong>{row.passengerName || '未提供'}</strong>
+                <span className="order-passenger-number">{passengerNumber(row.passengerNumber) || '—'}</span></div>
+              <div className="order-driver">{row.carPlate && <span className="order-plate">{row.carPlate}</span>}
+                <span>{row.driverName || '未提供'}</span></div>
+            </div></td>{view !== 'unsettled' && <td>{row.settledAt === null ? '未結帳' : date(row.settledAt)}</td>}
           </tr>)}</tbody></table></div>
           <ListPagination totalItems={sorted.length} currentPage={currentPage} itemsPerPage={itemsPerPage}
             onPageChange={setPage} onPageSizeChange={setItemsPerPage} />
