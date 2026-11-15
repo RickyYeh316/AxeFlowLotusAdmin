@@ -1,12 +1,25 @@
 # LotusAH — Web 管理介面
 
+## 列表分頁與優惠券文案（11/15）
+
+訂單、乘客、優惠券管理與優惠券結帳共用 `ListPagination`，沿訂單既有樣式顯示筆數範圍／總筆數、每頁 10／20／50／100 筆、上一頁／頁碼／下一頁。只有一頁仍顯示整組元件，前後頁停用；改每頁筆數回第一頁，頁碼隨篩選後總筆數收斂。零筆維持既有空清單提示。分頁在目前載入／篩選的結果上進行，優惠券結帳合計仍涵蓋全部符合條件資料。
+
+優惠券「目前優惠券／歷史優惠券」改「有效優惠券／失效優惠券」，沿用原分類條件；有效側仍保留草稿及原有非到期項目。右上新增優惠券草稿與結帳按鈕保持原樣。部署與人工驗收見最新交接。
+
+
 列表操作樣式：訂單「看詳細」、乘客「停用／啟用」、優惠券列表操作共用 `btn-secondary table-action-button`；乘客欄名為「操作」。右上新增優惠券草稿／結帳、工具列與彈窗保持；結帳列表目前沒有操作欄。
+
+## 單筆系統取消（11/15）
+
+OrderManager 的操作欄新增［系統取消］，沿用看詳細的 btn-secondary／table-action-button。僅待處理 PENDING／MATCHING／FAILED_MATCH／DRIVER_CANCELLED／NO_SHOW／SCHEDULED.OPEN 顯示，全部篩選也依每筆資格判斷；服務中／已結束／未知狀態不顯示。確認後透過 SYSTEM_CANCEL_ORDER，後端交易重驗版本及資格；會員 accountStatus 保持。
+
+useOrderCancellation 先保存本人 sessionStorage 的原請求再送出，防連點；結果不明時保留列表外的［重試確認結果］，訂單移出待處理仍可操作。跨頁／重整不自動送出，以相同 operationId 重試；登入身分與生命週期隔離晚到回應。明確拒絕清除待確認請求並重讀列表。sysLog 沿用 UI_CLICK／adminApi 請求、結果及錯誤；後端另存事件與操作稽核。
 
 ## 會員停權與系統取消（11/15）
 
 UserManager 以 accountStatus 精確顯示 ACTIVE正常啟用／BANNED已停權／DELETED已封存；未知或缺值顯示待確認，DELETED及未知值禁用操作。原停權按鈕改走 webAdmin.SET_MEMBER_STATUS，確認文案說明未完成訂單含載客中皆系統取消；不再直接 updateDoc。操作防連點，結果不確定時保留原 operationId 重試，期間其他會員操作停用；後端原子取消與回執契約見 FF admin README。
 
-訂單列表、分類子類及共用詳情支援 CANCELLED_BY_SYSTEM「系統取消」，歸紅色已結束；乘客當前單已結束時顯示「—」。詳情入口／受影響資產有版本 query。管理單筆取消、刪除會員新流程留下一步。部署與驗收見 root 交接。
+訂單列表、分類子類及共用詳情支援 CANCELLED_BY_SYSTEM「系統取消」，歸紅色已結束；乘客當前單已結束時顯示「—」。詳情入口／受影響資產有版本 query。管理單筆取消見下段；刪除會員新流程留下一步。部署與驗收見 root 交接。
 
 ## 乘客當前訂單（11/15）
 
@@ -50,7 +63,7 @@ UserManager 以 accountStatus 精確顯示 ACTIVE正常啟用／BANNED已停權�
 
 ## 11/14 訂單管理 v3
 
-- 時間下方特性標籤：即時淡藍／預約淡紫／優惠券淡金／敬老服務淡綠。操作欄只留「看詳細」，移除原完成／取消／刪除直寫處理。
+- 時間下方特性標籤：即時淡藍／預約淡紫／優惠券淡金／敬老服務淡綠。操作欄保留「看詳細」，已移除原完成／取消／刪除直寫處理；11/15 新增下述可信待處理單［系統取消］。
 - `OrderDetail.tsx` 使用原生置中 dialog 與同源 iframe；桌面直式卡片、窄視窗滿版。保留原列表篩選／頁碼／位置，關閉恢復焦點；登入身分變更即關閉，晚到回應丟棄。
 - `public/passenger-order/` 沿乘客原始 `order-card / order-map / order-chat / presentation` 與 CSS。卡片框線、排列、小地圖→行程軌跡、分司機對話與較早訊息一致。歷史卡顯示「重新叫車」並 disabled，進行中不出現；對話只查閱、不送出、不改乘客已讀。
 - 乘客共用資產來源為 FBase Lotus；使用 `node scripts/sync-passenger-order.cjs <FBase Lotus path>` 逐字同步，`shared/manifest.json` 保存 SHA256。副本勿單改。iframe 只傳白名單唯讀請求，parent 強制綁原 orderId，Firebase token 不送進 iframe；Map key 沿 AH 公開設定。

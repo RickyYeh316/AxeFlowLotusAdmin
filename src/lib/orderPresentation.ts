@@ -13,6 +13,12 @@ export function orderGroup(order: Pick<Order, 'status' | 'reservationState'>): O
   return 'unknown';
 }
 
+// 管理單筆取消限已知待處理狀態；未知預約子態需先確認資料。
+export function canSystemCancelOrder(order: Pick<Order, 'status' | 'reservationState'>): boolean {
+  return ['PENDING', 'MATCHING', 'FAILED_MATCH', 'DRIVER_CANCELLED', 'NO_SHOW'].includes(String(order.status))
+    || order.status === OrderStatus.SCHEDULED && order.reservationState === 'OPEN';
+}
+
 export function orderStatusText(order: Pick<Order, 'status' | 'reservationState'>): string {
   if (String(order.status) === 'SCHEDULED') {
     return ({ OPEN: '預約待承接', CLAIMED: '預約已承接', CONFIRMED: '預約已確認' } as Record<string, string>)[order.reservationState || ''] || '預約狀態待確認';

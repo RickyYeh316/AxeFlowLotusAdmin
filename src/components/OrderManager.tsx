@@ -1,7 +1,10 @@
 'use client';
 
+import ListPagination from './ListPagination';
+
+import { useOrderCancellation } from './useOrderCancellation';
 import OrderDetail from './OrderDetail';
-import { orderGroup, orderStatusText, orderSubcategory, orderSubcategories, OrderFilter } from '../lib/orderPresentation';
+import { canSystemCancelOrder, orderGroup, orderStatusText, orderSubcategory, orderSubcategories, OrderFilter } from '../lib/orderPresentation';
 import { recordSystemLog } from '../lib/systemLogs/client';
 import { passengerNumber } from '../lib/passengerNumber';
 
@@ -43,6 +46,7 @@ export default function OrderManager() {
   const [loadError, setLoadError] = useState('');
   const [driverReadFailures, setDriverReadFailures] = useState<Set<string>>(new Set());
   const [reloadKey, setReloadKey] = useState(0);
+  const cancellation = useOrderCancellation(() => setReloadKey(key => key + 1));
 
   // Sorting State
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'ascending' | 'descending' } | null>({
@@ -321,43 +325,6 @@ export default function OrderManager() {
     return sortedOrders.slice(start, start + itemsPerPage);
   }, [sortedOrders, currentPage, itemsPerPage]);
 
-  // Generate page numbers with ellipsis
-  const getPageNumbers = () => {
-    const pages: (number | string)[] = [];
-    if (totalPages <= 7) {
-      for (let i = 1; i <= totalPages; i++) {
-        pages.push(i);
-      }
-      return pages;
-    }
-
-    pages.push(1);
-
-    if (currentPage > 4) {
-      pages.push('...');
-    }
-
-    let start = Math.max(2, currentPage - 2);
-    let end = Math.min(totalPages - 1, currentPage + 2);
-
-    if (currentPage <= 4) {
-      end = 5;
-    }
-    if (currentPage >= totalPages - 3) {
-      start = totalPages - 4;
-    }
-
-    for (let i = start; i <= end; i++) {
-      pages.push(i);
-    }
-
-    if (currentPage < totalPages - 3) {
-      pages.push('...');
-    }
-
-    pages.push(totalPages);
-    return pages;
-  };
 
   return (
     <>
@@ -410,6 +377,12 @@ export default function OrderManager() {
 
       {driverReadFailures.size > 0 && <p role="alert" className="coupon-error">部分司機資料讀取失敗，車牌／司機搜尋結果尚未完整，請重新整理。</p>}
       {loadError && <p role="alert" className="coupon-error">{loadError}</p>}
+      {cancellation.message && <p role="status" className={cancellation.succeeded ? undefined : "coupon-error"}>{cancellation.message}</p>}
+      {cancellation.pending && <div style={{ marginBottom: 16 }}>
+        <span>訂單 {cancellation.pending.label}：{cancellation.busy ? '系統取消處理中…' : '取消結果待確認。'} </span>
+        <button type="button" className="btn-secondary table-action-button" data-syslog="order.system_cancel_retry"
+          disabled={cancellation.busy} onClick={cancellation.retry}>重試確認結果</button>
+      </div>}
       {loading ? (
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>載入訂單資料中...</div>
       ) : filteredOrders.length === 0 ? (
@@ -459,88 +432,20 @@ export default function OrderManager() {
                     </div>
                   </td>
                   <td>
+                    <div className="order-cell-stack">
                     <button type="button" data-syslog="order.detail_open" onClick={() => setDetailId(order.id)} className="btn-secondary table-action-button order-detail-button">看詳細</button>
+                    {canSystemCancelOrder(order) && <button type="button" data-syslog="order.system_cancel"
+                      className="btn-secondary table-action-button" disabled={cancellation.disabled || !!loadError}
+                      onClick={() => cancellation.cancel(order)}>系統取消</button>}
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
 
-          {/* Pagination Controls */}
-          {totalPages > 1 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginTop: 20, padding: '12px 8px 4px 8px', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                  顯示第 {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, sortedOrders.length)} 筆，共 {sortedOrders.length} 筆資料
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                  <span>每頁顯示:</span>
-                  <select 
-                    value={itemsPerPage} 
-                    onChange={(e) => {
-                      setItemsPerPage(Number(e.target.value));
-                      setCurrentPage(1);
-                    }}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: 4,
-                      padding: '2px 8px',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.75rem',
-                      outline: 'none',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <option value={10} style={{ background: '#0c0d14' }}>10 筆</option>
-                    <option value={20} style={{ background: '#0c0d14' }}>20 筆</option>
-                    <option value={50} style={{ background: '#0c0d14' }}>50 筆</option>
-                    <option value={100} style={{ background: '#0c0d14' }}>100 筆</option>
-                  </select>
-                </div>
-              </div>
-              
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <button 
-                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} 
-                  disabled={currentPage === 1}
-                  className="btn-secondary"
-                  style={{ padding: '6px 12px', fontSize: '0.75rem' }}
-                >
-                  上一頁
-                </button>
-                
-                {getPageNumbers().map((pageNum, idx) => {
-                  if (pageNum === '...') {
-                    return (
-                      <span key={`ellipsis-${idx}`} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 32, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        ...
-                      </span>
-                    );
-                  }
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() => setCurrentPage(Number(pageNum))}
-                      className={currentPage === pageNum ? 'btn-primary' : 'btn-secondary'}
-                      style={{ padding: '6px 12px', fontSize: '0.75rem', minWidth: 32, height: 'auto', borderRadius: 4, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
-
-                <button 
-                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} 
-                  disabled={currentPage === totalPages}
-                  className="btn-secondary"
-                  style={{ padding: '6px 12px', fontSize: '0.75rem' }}
-                >
-                  下一頁
-                </button>
-              </div>
-            </div>
-          )}
+          <ListPagination totalItems={sortedOrders.length} currentPage={currentPage} itemsPerPage={itemsPerPage}
+            onPageChange={setCurrentPage} onPageSizeChange={setItemsPerPage} />
         </div>
       )}
         {detailId && <OrderDetail key={detailId} orderId={detailId} onClose={() => setDetailId(null)} />}

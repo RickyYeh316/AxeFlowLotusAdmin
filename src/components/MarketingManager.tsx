@@ -1,5 +1,7 @@
 'use client';
 
+import ListPagination from './ListPagination';
+
 import { passengerNumber } from '../lib/passengerNumber';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -21,6 +23,7 @@ const emptyForm = (): Form => ({ type: 3, title: '', description: '', discountAm
 const journalKey = (uid: string) => `lotus-coupon-operation:${uid}`;
 
 export default function MarketingManager() {
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [rows, setRows] = useState<CouponRow[]>([]), [loading, setLoading] = useState(true);
   const [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [history, setHistory] = useState(false), [page, setPage] = useState(1), [now, setNow] = useState(Date.now());
@@ -137,7 +140,7 @@ export default function MarketingManager() {
     const value = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'zh-TW');
     return sort.ascending ? value : -value;
   }), [rows, history, now, sort]);
-  const pages = Math.max(1, Math.ceil(filtered.length / 10)), currentPage = Math.min(page, pages);
+  const pages = Math.max(1, Math.ceil(filtered.length / itemsPerPage)), currentPage = Math.min(page, pages);
   const disabled = busy || pending !== null;
   const memberMatches = passengers.filter(p => `${p.passengerName} ${p.phoneNumber}`.toLowerCase().includes(search.trim().toLowerCase()) || passengerNumber(p.passengerNumber) === search.trim());
   const recipient = passengers.find(p => p.id === selected);
@@ -153,18 +156,18 @@ export default function MarketingManager() {
         <button className="btn-primary" disabled={disabled || loading} onClick={() => edit(null)}><Plus size={16} />新增優惠券草稿</button>
       </div>
       <div className="coupon-toolbar">
-        <button className={history ? 'btn-secondary' : 'btn-primary'} onClick={() => { setHistory(false); setPage(1); }}>目前優惠券</button>
-        <button className={history ? 'btn-primary' : 'btn-secondary'} onClick={() => { setHistory(true); setPage(1); }}>歷史優惠券</button>
+        <button className={history ? 'btn-secondary' : 'btn-primary'} onClick={() => { setHistory(false); setPage(1); }}>有效優惠券</button>
+        <button className={history ? 'btn-primary' : 'btn-secondary'} onClick={() => { setHistory(true); setPage(1); }}>失效優惠券</button>
         <button className="btn-secondary" disabled={loading || disabled} onClick={() => void reload()}><RefreshCw size={14} />重新整理</button>
       </div>
       {!modal && feedback}
       <p className="coupon-help">起始日 00:00:00 生效，到期日 23:59:59 截止。</p>
-      {loading ? <p className="coupon-empty">載入優惠券中…</p> : !filtered.length ? <p className="coupon-empty">目前沒有{history ? '歷史優惠券' : '符合條件的優惠券'}。</p> : <>
+      {loading ? <p className="coupon-empty">載入優惠券中…</p> : !filtered.length ? <p className="coupon-empty">目前沒有{history ? '失效優惠券' : '符合條件的優惠券'}。</p> : <>
         <div className="admin-table-container"><table className="admin-table"><thead><tr>
           {([['type', '類型'], ['title', '顯示名稱'], ['discountAmount', '折抵金額'], ['startDate', '有效起始日'], ['endDate', '有效到期日']] as const).map(([key, label]) =>
             <th key={key}><button className="coupon-sort" onClick={() => setSort({ key, ascending: sort.key === key ? !sort.ascending : true })}>{label}{sort.key === key ? sort.ascending ? ' ↑' : ' ↓' : ''}</button></th>)}
           <th>狀態</th><th>操作</th></tr></thead><tbody>
-          {filtered.slice((currentPage - 1) * 10, currentPage * 10).map(row => <tr key={row.id}>
+          {filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map(row => <tr key={row.id}>
             <td>{typeName(row.type)}</td><td className="coupon-name"><strong>{row.title}</strong>{row.description && <p className="coupon-help">{row.description}</p>}</td>
             <td>{row.discountAmount} 元</td><td>{row.startDate || '尚未設定'}</td><td>{row.endDate || '尚未設定'}</td>
             <td>{row.type === 1 ? row.status === 'active' ? '啟用' : '停用' : row.status === 'draft' ? '草稿'
@@ -186,8 +189,8 @@ export default function MarketingManager() {
             </div></td>
           </tr>)}
         </tbody></table></div>
-        <div className="coupon-toolbar"><button className="btn-secondary" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>上一頁</button>
-          <span>{currentPage} / {pages}</span><button className="btn-secondary" disabled={currentPage >= pages} onClick={() => setPage(currentPage + 1)}>下一頁</button></div>
+        <ListPagination totalItems={filtered.length} currentPage={currentPage} itemsPerPage={itemsPerPage}
+            onPageChange={setPage} onPageSizeChange={setItemsPerPage} />
       </>}
     </div>
     {modal && <div className="modal-overlay coupon-overlay"><div ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="coupon-dialog-title" className="glass modal-content coupon-modal" onKeyDown={e => {

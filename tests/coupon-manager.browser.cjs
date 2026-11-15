@@ -80,9 +80,14 @@ window.fetch=async(url,options)=>{
     await wait(`document.querySelector('tbody')?.textContent.includes('新戶優惠券')`);
     assert.equal(await run(`new Set([...document.querySelectorAll('.coupon-toolbar > button')].map(b=>b.getBoundingClientRect().height)).size`),1);
     assert.equal(await run(`(()=>{const b=document.querySelector('.coupon-toolbar > button:last-child');const icon=b.querySelector('svg').getBoundingClientRect();const r=new Range();r.selectNode(b.lastChild);const text=r.getBoundingClientRect();return Math.abs((icon.top+icon.bottom-text.top-text.bottom)/2)<2})()`),true);
+    for (const size of ['100','20','50','10']) {
+      await fill('[aria-label="每頁顯示筆數"]',size);
+      await wait(`document.querySelector('[aria-label="每頁顯示筆數"]')?.value==='${size}'`);
+      assert.equal(await run(`document.querySelectorAll('.list-pagination button:disabled').length`),2);
+    }
     assert.equal(await run(`document.querySelector('tbody').textContent.includes('刪除')`),false);
-    await click('歷史優惠券');await wait(`document.querySelector('tbody')?.textContent.includes('過期補償券')`);
-    await click('目前優惠券');await click('新增優惠券草稿');await wait(`!!document.querySelector('[role=dialog]')`);
+    await click('失效優惠券');await wait(`document.querySelector('tbody')?.textContent.includes('過期補償券')`);
+    await click('有效優惠券');await click('新增優惠券草稿');await wait(`!!document.querySelector('[role=dialog]')`);
     assert.equal(await run(`document.querySelector('[role=dialog]').textContent.includes('最低消費')`),false);
     await fill('input[maxlength="256"]','2027來花蓮跨年・這是一個測試長名稱與各端視覺呈現的補償優惠券');
     await fill('input[type=number]','80');
@@ -99,18 +104,18 @@ window.fetch=async(url,options)=>{
     assert.equal(await run(`document.querySelector('[role=dialog]').textContent.includes('MEMBER-test')`),false);
     await fill('input[placeholder="姓名、電話或乘客編號"]','000123');
     await wait(`document.querySelector('option[value="MEMBER-test"]')!==null`);
-    await fill('select','MEMBER-test');
+    await fill('[role=dialog] select','MEMBER-test');
     await run('failAfterWrite=true');await click('確認發券');await wait(`document.body.textContent.includes('重試原操作（不重複發券）')`);
     assert.equal(await run(`document.querySelector('button[aria-label="關閉"]').disabled`),true);
     await click('重試原操作（不重複發券）');await wait(`!document.querySelector('[role=dialog]')`);
     assert.equal(await run(`new Set(calls.filter(c=>c.action==='COUPON_ISSUE').map(c=>c.operationId)).size`),1);
     assert.equal(await run(`calls.filter(c=>c.action==='COUPON_ISSUE').every(c=>c.notifyPassenger===false && c.userId==='MEMBER-test')`),true);
-    await click('發券');await wait(`document.querySelector('option[value="MEMBER-test"]')!==null`);await fill('select','MEMBER-test');await click('確認發券');await wait(`!document.querySelector('[role=dialog]')`);
+    await click('發券');await wait(`document.querySelector('option[value="MEMBER-test"]')!==null`);await fill('[role=dialog] select','MEMBER-test');await click('確認發券');await wait(`!document.querySelector('[role=dialog]')`);
     assert.equal(await run(`new Set(calls.filter(c=>c.action==='COUPON_ISSUE').map(c=>c.operationId)).size`),2);
     assert.equal(await run(`calls.filter(c=>c.action==='COUPON_ISSUE').at(-1).notifyPassenger`),true);
     assert.equal(await run(`[...document.querySelectorAll('tbody tr')].find(r=>r.textContent.includes('2027來花蓮跨年')).textContent.includes('編輯')`),false);
     await click('新增優惠券草稿');await wait(`!!document.querySelector('[role=dialog]')`);
-    await fill('select','2');await fill('input[maxlength="256"]','全體活動150');await fill('input[type=number]','150');await fill('input[type=date]','2026-01-01');
+    await fill('[role=dialog] select','2');await fill('input[maxlength="256"]','全體活動150');await fill('input[type=number]','150');await fill('input[type=date]','2026-01-01');
     await run(`(()=>{const e=document.querySelectorAll('input[type=date]')[1];Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'2039-08-31');e.dispatchEvent(new Event('input',{bubbles:true}));})()`);
     await click('儲存草稿');await wait(`!document.querySelector('[role=dialog]')`);
     await run(`[...[...document.querySelectorAll('tbody tr')].find(r=>r.textContent.includes('全體活動150')).querySelectorAll('button')].find(b=>b.textContent==='發券').click()`);
@@ -149,7 +154,7 @@ window.fetch=async(url,options)=>{
     await run(`changeUser(null);hold=false;release()`);await wait(`document.body.textContent.includes('請先使用管理員')`);
     assert.equal(await run(`document.querySelector('tbody')===null`),true);
     assert.deepEqual(errors,[]);
-    console.log('PASS: 草稿、Type1保護、Type3連發、Type2全體確認／回應遺失防重／背景輪詢／失敗重試／完成鎖定、目前/歷史、真實圖示等高、長名稱、登出隔離、390px dialog與Escape。');
+    console.log('PASS: 草稿、Type1保護、Type3連發、Type2全體確認／回應遺失防重／背景輪詢／失敗重試／完成鎖定、有效/失效與單頁筆數選單、真實圖示等高、長名稱、登出隔離、390px dialog與Escape。');
     console.log('Screenshots: '+temp);
   } finally {ws?.close();chrome.kill('SIGTERM');await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;});

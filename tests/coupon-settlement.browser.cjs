@@ -74,6 +74,11 @@ window.fetch=async(url,options)=>{
     await send('Page.navigate',{url:`http://127.0.0.1:${server.address().port}`});
 
     await wait(`document.querySelectorAll('tbody tr').length===10`);
+    for (const size of [100,20,50,10]) {
+      await fill('[aria-label="每頁顯示筆數"]',String(size));
+      await wait(`document.querySelectorAll('tbody tr').length===${Math.min(size,13)}`);
+      assert.equal(await run(`document.querySelector('[aria-label="每頁顯示筆數"]').value`),String(size));
+    }
     const enabled = () => run(`[...document.querySelectorAll('button')].find(b=>b.textContent==='結帳').disabled===false`);
     assert.equal(await enabled(),false);
     assert.equal(await run(`document.querySelectorAll('th').length`),7);

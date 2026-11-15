@@ -38,10 +38,19 @@ export const addDoc=()=>{throw Error('Unexpected write')};export const updateDoc
 export const doc=(_db,...parts)=>({path:parts.join('/'),id:parts.at(-1)});export const serverTimestamp=()=>null;
 `);
 const fixture = `
-window.countReads=[];window.countOffset=0;window.countsFailure=false;window.holdCounts=false;window.heldCounts=[];
+window.cancelWrites=[];window.cancelUncertain=false;window.cancelStale=false;window.cancelHold=false;window.cancelApplied=new Set();window.countReads=[];window.countOffset=0;window.countsFailure=false;window.holdCounts=false;window.heldCounts=[];
 window.confirm=()=>false;window.alerts=[];window.alert=m=>alerts.push(m);window.statusWrites=[];window.statusUncertain=false;window.uploadedLogs=[];window.fetch=async(url,init)=>{
  if(String(url).endsWith('/webAdmin')){
   const body=JSON.parse(init.body);
+  if(body.action==='SYSTEM_CANCEL_ORDER'){
+    cancelWrites.push(body);
+    if(cancelHold)await new Promise(r=>window.releaseCancel=r);
+    if(cancelStale)return {ok:false,status:409,json:async()=>({error:'訂單已更新，請重新整理後再操作',code:'STALE_OPERATION'})};
+    const duplicate=cancelApplied.has(body.operationId);cancelApplied.add(body.operationId);
+    const order=fixture.orders.find(o=>o.id===body.orderId);if(order){order.data.status='CANCELLED_BY_SYSTEM';reemitOrders();}
+    if(cancelUncertain)return {ok:false,status:503,json:async()=>({error:'操作結果待確認'})};
+    return {ok:true,status:200,json:async()=>({status:'CANCELLED_BY_SYSTEM',duplicate})};
+  }
   if(body.action==='SET_MEMBER_STATUS'){
     statusWrites.push(body);if(statusUncertain)return {ok:false,status:503,json:async()=>({error:'操作結果待確認'})};
     fixture.users.find(u=>u.id===body.userId).data.accountStatus=body.accountStatus;reemitUsers();
@@ -88,7 +97,7 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     let serial=0;const waiting=new Map(),errors=[];
     ws.onmessage=event=>{const m=JSON.parse(event.data);if(m.id){const p=waiting.get(m.id);waiting.delete(m.id);m.error?p.reject(m.error):p.resolve(m.result);}else if(m.method==='Runtime.exceptionThrown')errors.push(m.params.exceptionDetails);};
     const send=(method,params={})=>new Promise((resolve,reject)=>{const id=++serial;waiting.set(id,{resolve,reject});ws.send(JSON.stringify({id,method,params}));});
-    const run=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});assert.equal(r.exceptionDetails,undefined,JSON.stringify(r.exceptionDetails));return r.result.value;};
+    const run=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true}).catch(error=>{throw Error(JSON.stringify(error)+' expression: '+expression)});assert.equal(r.exceptionDetails,undefined,JSON.stringify(r.exceptionDetails));return r.result.value;};
     const wait=async expression=>{for(let i=0;i<250;i++){if(await run(expression))return;await new Promise(r=>setTimeout(r,30));}console.error('fixture runtime errors',errors);console.error('fixture diagnostics',await run(`({errors:document.body.innerText,frame:document.querySelector('iframe')?.contentDocument?.body.innerText,reads:window.adminReads,statusWrites:window.statusWrites,alerts:window.alerts})`));assert.fail(expression);};
     const click=label=>run(`[...document.querySelectorAll('button')].find(b=>b.textContent===${JSON.stringify(label)}).click()`);
     const fill=async(selector,value)=>{await run(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(el instanceof HTMLSelectElement?HTMLSelectElement.prototype:el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));})()`);};
@@ -97,6 +106,11 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     await send('Emulation.setTimezoneOverride',{timezoneId:'America/Los_Angeles'});
     await send('Page.navigate',{url:`http://127.0.0.1:${server.address().port}`});
     await wait(`document.querySelectorAll('tbody tr').length===5`);
+    for (const size of ['100', '20', '50', '10']) {
+      await fill('[aria-label="每頁顯示筆數"]', size);
+      await wait(`document.querySelector('[aria-label="每頁顯示筆數"]')?.value==='${size}'`);
+      assert.equal(await run(`document.querySelectorAll('.list-pagination button:disabled').length`), 2);
+    }
     assert.equal(await run(`document.querySelector('tbody').textContent.includes('MEMBER-private')`),false);
     assert.equal(await run(`document.querySelector('tbody').textContent.includes('000123')`),true);
     assert.equal(await run(`document.querySelector('tbody').textContent.includes('—')`),true);
@@ -306,16 +320,19 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     assert.equal(await run(`document.querySelector('[aria-pressed="true"]').textContent`),'服務中 (5)');
     const ids=()=>run(`[...document.querySelectorAll('tbody tr')].map(r=>r.dataset.logOrder).sort()`);
     assert.deepEqual(await ids(),['state-0','state-1','state-2','state-3','state-4']);
+    assert.equal(await run(`document.querySelectorAll('[data-syslog="order.system_cancel"]').length`),0);
     assert.equal(await run(`getComputedStyle(document.querySelector('.order-status')).borderColor`),'rgb(102, 178, 146)');
     await run(`document.querySelector('[data-syslog="order.filter.waiting"]').click()`);await wait(`document.querySelectorAll('tbody tr').length===6`);
     assert.deepEqual(await ids(),['state-10','state-5','state-6','state-7','state-8','state-9']);
     assert.equal(await run(`document.querySelectorAll('.order-status').length`),6);
+    assert.equal(await run(`document.querySelectorAll('[data-syslog="order.system_cancel"]').length`),6);
     assert.equal(await run(`getComputedStyle(document.querySelector('.order-status')).borderColor`),'rgb(214, 179, 92)');
     assert.equal(await run(`document.querySelector('[data-log-order="state-9"]').innerText.includes('司機中止服務／待乘客決定')`),true);
     await click('重新整理');await wait(`document.querySelectorAll('tbody tr').length===6`);
     assert.equal(await run(`document.querySelector('[data-syslog="order.filter.waiting"]').getAttribute('aria-pressed')`),'true');
     await run(`document.querySelector('[data-syslog="order.filter.closed"]').click()`);await wait(`document.querySelectorAll('tbody tr').length===2`);
     assert.deepEqual(await ids(),['state-11','state-12']);
+    assert.equal(await run(`document.querySelectorAll('[data-syslog="order.system_cancel"]').length`),0);
     assert.equal(await run(`getComputedStyle(document.querySelector('.order-status')).borderColor`),'rgb(196, 123, 139)');
     await run(`document.querySelector('[data-syslog="order.filter.all"]').click()`);await wait(`document.querySelectorAll('tbody tr').length===10`);
     await fill('input.search-input','#700013');await wait(`document.querySelectorAll('tbody tr').length===1`);
@@ -355,9 +372,61 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     fs.writeFileSync(path.join(temp,'orders-v4.5.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
     await wait(`window.uploadedLogs.some(b=>b.events.some(e=>e.details.control==='order.subcategory'&&e.details.action==='FAILED_MATCH'))`);
     console.log('PASS: v4.5 各子類精確篩選、選單隨大類移動、切換重設、重整保留、搜尋交集、390px 成組換行與 sysLog。');
+    // 管理單筆取消：全部篩選仍依每筆狀態；已確認請求跨頁重送、身分隔離。
+    await run(`fixture.orders.forEach(o=>o.data.updatedAt={seconds:1794700000,nanoseconds:123,toDate:()=>new Date('2026-11-15T01:00:00Z')});reemitOrders();document.querySelector('[data-syslog="order.filter.all"]').click()`);
+    await fill('input.search-input','#700006');await wait(`document.querySelectorAll('tbody tr').length===1`);
+    await wait(`!document.querySelector('[data-syslog="order.system_cancel"]').disabled`);
+    await run(`window.confirm=()=>false;document.querySelector('[data-syslog="order.system_cancel"]').click()`);
+    assert.equal(await run(`cancelWrites.length`),0);
+    await run(`window.confirm=()=>true;window.cancelUncertain=true;const b=document.querySelector('[data-syslog="order.system_cancel"]');b.click();b.click()`);
+    await wait(`document.body.innerText.includes('取消結果待確認')&&!document.querySelector('[data-syslog="order.system_cancel_retry"]').disabled`);
+    assert.equal(await run(`cancelWrites.length`),1);
+    assert.equal(await run(`document.querySelectorAll('[data-syslog="order.system_cancel"]').length`),0);
+    assert.equal(await run(`JSON.parse(sessionStorage.getItem('lotus-order-cancellation:test-admin')).request.operationId===cancelWrites[0].operationId`),true);
+    await run(`showView('users')`);await wait(`document.body.innerText.includes('乘客管理')`);
+    await run(`showView('orders')`);await wait(`!!document.querySelector('[data-syslog="order.system_cancel_retry"]')`);
+    await run(`window.cancelUncertain=false;document.querySelector('[data-syslog="order.system_cancel_retry"]').click()`);
+    await wait(`document.body.innerText.includes('已系統取消')&&!document.querySelector('[data-syslog="order.system_cancel_retry"]')`);
+    assert.equal(await run(`cancelWrites.length===2&&cancelWrites[0].operationId===cancelWrites[1].operationId&&cancelApplied.size===1`),true);
+    assert.equal(await run(`sessionStorage.getItem('lotus-order-cancellation:test-admin')`),null);
+    await run(`document.querySelector('[data-syslog="order.filter.waiting"]').click()`);
+    await wait(`!!document.querySelector('[data-log-order="state-7"] [data-syslog="order.system_cancel"]')`);
+    await run(`window.cancelStale=true;document.querySelector('[data-log-order="state-7"] [data-syslog="order.system_cancel"]').click()`);
+    await wait(`document.body.innerText.includes('訂單已更新')&&!document.querySelector('[data-syslog="order.system_cancel_retry"]')`);
+    assert.equal(await run(`sessionStorage.getItem('lotus-order-cancellation:test-admin')`),null);
+    await run(`window.cancelStale=false;window.cancelHold=true;document.querySelector('[data-log-order="state-7"] [data-syslog="order.system_cancel"]').click()`);
+    await wait(`typeof releaseCancel==='function'`);
+    await run(`changeUser('cancel-other-admin');releaseCancel()`);
+    await wait(`!document.querySelector('[data-syslog="order.system_cancel_retry"]')`);
+    assert.equal(await run(`!!sessionStorage.getItem('lotus-order-cancellation:test-admin')&&sessionStorage.getItem('lotus-order-cancellation:cancel-other-admin')===null`),true);
+    await run(`window.cancelHold=false;changeUser('test-admin')`);
+    await wait(`!!document.querySelector('[data-syslog="order.system_cancel_retry"]')`);
+    await click('重試確認結果');await wait(`!document.querySelector('[data-syslog="order.system_cancel_retry"]')`);
+    assert.equal(await run(`cancelWrites.at(-1).operationId===cancelWrites.at(-2).operationId`),true);
+    await wait(`uploadedLogs.some(b=>b.events.some(e=>e.type==='ACTION_RESULT'&&e.details.action==='SYSTEM_CANCEL_ORDER'))`);
+    await click('重新整理');await wait(`!!document.querySelector('[data-log-order="state-5"]')`);
+    await run(`document.getAnimations().forEach(a=>a.finish())`);
+    fs.writeFileSync(path.join(temp,'orders-system-cancel.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    console.log('PASS: 單筆取消只限待處理、全部篩選同規則、確認取消／連點防重、結果不明移出列表仍可重試、跨頁同請求、409重整、跨帳號晚回應隔離及sysLog。');
     await run(`fixture.orders=savedOrders`);
 
     console.log('PASS: v4 預設服務中、全部現行狀態／預約子狀態、待決定仍進行中、黃綠紅框、未知狀態、分類筆數與重新整理保留條件。');
+    // 重現 68 筆選 100 後仍能改回各筆數，切換筆數回第一頁。
+    await run(`window.paginationOrders=fixture.orders;fixture.orders=Array.from({length:68},(_,i)=>({id:'pagination-'+i,data:{...fixture.orders[0].data,status:'COMPLETED'}}));reemitOrders();document.querySelector('[data-syslog="order.filter.all"]').click()`);
+    await wait(`document.querySelectorAll('tbody tr').length===10`);
+    await click('下一頁');
+    for (const size of [100, 20, 50, 10]) {
+      await fill('[aria-label="每頁顯示筆數"]', String(size));
+      await wait(`document.querySelectorAll('tbody tr').length===${Math.min(size,68)}&&document.querySelector('.list-pagination [aria-current="page"]')?.textContent.trim()==='1'`);
+      assert.equal(await run(`document.querySelector('[aria-label="每頁顯示筆數"]').value`), String(size));
+    }
+    await fill('[aria-label="每頁顯示筆數"]','100');
+    await wait(`document.querySelectorAll('tbody tr').length===68`);
+    fs.writeFileSync(path.join(temp,'orders-pagination-100.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true})).data,'base64'));
+    await fill('[aria-label="每頁顯示筆數"]','10');
+    await run(`fixture.orders=paginationOrders;reemitOrders()`);
+    await wait(`uploadedLogs.some(b=>b.events.some(e=>e.type==='UI_CHANGE'&&e.details.control==='pagination.page_size'&&e.details.count===100))`);
+    console.log('PASS: 單頁保留分頁元件、68筆選100再改20/50/10、筆數變更回第一頁。');
     // 分頁與預約狀態篩選仍可用；只有當頁呈現資料列。
     await run(`fixture.orders=Array.from({length:12},(_,i)=>({id:'page-'+i,data:{...fixture.orders[0].data,readableId:String(900000+i),status:i===0?'SCHEDULED':'COMPLETED'}}));showView('users')`);
     await wait(`document.body.innerText.includes('乘客管理')`);

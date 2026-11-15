@@ -1,5 +1,7 @@
 'use client';
 
+import ListPagination from './ListPagination';
+
 import { passengerNumber } from '../lib/passengerNumber';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -23,6 +25,7 @@ const date = (v: number) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/T
 const journalKey = (uid: string) => `lotus-coupon-checkout:${uid}`;
 
 export default function CouponSettlementManager() {
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [rows, setRows] = useState<Row[]>([]), [drivers, setDrivers] = useState<Driver[]>([]);
   const [view, setView] = useState<View>('unsettled'), [field, setField] = useState<Field>('driver');
   const [query, setQuery] = useState(''), [selected, setSelected] = useState('');
@@ -103,7 +106,7 @@ export default function CouponSettlementManager() {
     return (sort.ascending ? compared : -compared) || a.id.localeCompare(b.id);
   }), [filtered, sort]);
   const total = filtered.reduce((sum, row) => sum + row.amount, 0);
-  const pages = Math.max(1, Math.ceil(sorted.length / 10)), currentPage = Math.min(page, pages);
+  const pages = Math.max(1, Math.ceil(sorted.length / itemsPerPage)), currentPage = Math.min(page, pages);
   const canCheckout = !locked && !loading && !error && view === 'unsettled' && field === 'driver' && !!chosen && total > 0;
   const resetSearch = (value: Field) => { setField(value); setQuery(''); setSelected(''); setPage(1); setNotice(''); };
 
@@ -188,13 +191,13 @@ export default function CouponSettlementManager() {
           <div className="admin-table-container"><table className="admin-table checkout-table"><thead><tr>
             {headers.map(([key, label]) => <th key={key}><button className="coupon-sort" onClick={() => { setSort({ key, ascending: sort.key === key ? !sort.ascending : true }); setPage(1); }}>
               {label}{sort.key === key ? sort.ascending ? ' ↑' : ' ↓' : ''}</button></th>)}
-          </tr></thead><tbody>{sorted.slice((currentPage - 1) * 10, currentPage * 10).map(row => <tr key={row.id}>
+          </tr></thead><tbody>{sorted.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map(row => <tr key={row.id}>
             <td className="coupon-name">{row.name}</td><td>{money(row.amount)} 元</td><td>{date(row.redeemedAt)}</td>
             <td>{row.readableId ? `#${row.readableId}` : '尚未提供'}</td><td>{row.driverName}<p className="coupon-help">{row.carPlate || '車牌未提供'}</p></td>
             <td>{row.passengerName}<p className="coupon-help">乘客編號：{passengerNumber(row.passengerNumber) || '—'}</p></td><td>{row.settledAt === null ? '未結帳' : date(row.settledAt)}</td>
           </tr>)}</tbody></table></div>
-          <div className="coupon-toolbar"><button className="btn-secondary" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>上一頁</button>
-            <span>{currentPage} / {pages}</span><button className="btn-secondary" disabled={currentPage >= pages} onClick={() => setPage(currentPage + 1)}>下一頁</button></div>
+          <ListPagination totalItems={sorted.length} currentPage={currentPage} itemsPerPage={itemsPerPage}
+            onPageChange={setPage} onPageSizeChange={setItemsPerPage} />
         </>}
       </>}
     </div>
