@@ -8,7 +8,7 @@
 .hint-manager textarea { resize: vertical; }
 .hint-times { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .hint-actions { display: flex; flex-wrap: wrap; gap: 12px; }
-.hint-status, .hint-feedback { margin: 16px 0; overflow-wrap: anywhere; }
+.hint-status, .hint-feedback, .hint-guidance { margin: 16px 0; overflow-wrap: anywhere; }
 .hint-preview { margin: auto; width: min(90vw, 560px); max-height: 80dvh; overflow: auto; padding: 24px; border: 1px solid #42536b; border-radius: 12px; background: #171f2b; color: #e5eaf1; }
 .hint-preview::backdrop { background: #0009; }
 .hint-preview h3 { color: #fcd34d; overflow-wrap: anywhere; }

@@ -2,9 +2,11 @@
 
 ## 基本公告 hintArea（11/16）
 
-選單「優惠券結帳 → 公告 & 維護 → 管理者管理」。HintAreaManager 編輯一則 start／end／title／detail 公告，台灣時間輸入、純文字預覽及撤下；現有 adminApi 接 HINT_AREA_GET／SAVE。本人 sessionStorage 保留待確認的原操作；重試使用原 operationId，成功後重讀最新公告，過期版本要求重新整理。換帳號／卸載隔離晚回應。
+選單「優惠券結帳 → 公告 & 維護 → 管理者管理」。HintAreaManager 管理一則 start／end／title／detail 公告，四顆功能按鈕為「儲存／預覽／啟用／停用」，右上保留重新整理。首次儲存預設停用；儲存維持現有狀態，啟用中儲存會更新雙端。停用保留內容及時間；有未存編輯先儲存才可啟用，停用成功保留畫面未存修改。
 
-功能契約及 Human Review Map 見 Lotus root `02_現行定義/公告與hintArea功能說明.md`。維護 pre／start／end 尚未接入。本機正式建置、定向 lint、`node tests/hint-area.browser.cjs` 隔離 Chrome（時間／儲存／重送／競爭／撤下／身分／響應式）通過；build-2026-11-15-018 已 READY／SUCCEEDED／100% 流量，52 份來源／設定與 8 個線上資產已核對，真人驗收待進行。
+現有 adminApi 接 HINT_AREA_GET／SAVE／SET_ENABLED。台灣時間輸入、純文字預覽；本人 sessionStorage 保留待確認的原操作，狀態操作亦可原 ID 重試；成功後重讀最新公告，過期版本要求重新整理。換帳號／卸載隔離晚回應。功能契約、Human Review Map、驗證與發布狀態見 Lotus root `02_現行定義/公告與hintArea功能說明.md` 及目前交接。維護 pre／start／end 尚未接入。
+
+11/16 四按鈕已部署回讀：webAdmin webadmin-00024-tan、wA build-2026-11-16-002；來源與100%流量核對通過，本機測試通過，Ready 本輪人工驗收待進行。
 
 ## 11/15 優惠券結帳身分欄排版與排序
 

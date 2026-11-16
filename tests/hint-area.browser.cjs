@@ -19,16 +19,16 @@ const entry = write('entry.js', `import React from 'react'; import {createRoot} 
 const fixture = `
 window.calls=[];window.failAfterWrite=false;window.hold=false;window.rejectSave=false;
 window.receipts=new Map(JSON.parse(sessionStorage.getItem('receipts')||'[]'));
-window.result=JSON.parse(sessionStorage.getItem('hint')||'{"hint":null,"revision":null}');
+window.result=JSON.parse(sessionStorage.getItem('hint')||'{"hint":null,"revision":null,"enabled":false}');
 window.fetch=async(url,options)=>{
  if(url!=='https://asia-east1-axeflowlotus-6dc3b.cloudfunctions.net/webAdmin')throw Error('Unexpected network');
  const x=JSON.parse(options.body);calls.push(x);let response;
  if(x.action==='HINT_AREA_GET') {response=result;if(hold)await new Promise(resolve=>window.release=resolve);}
- else if(x.action==='HINT_AREA_SAVE') {
+ else if(['HINT_AREA_SAVE','HINT_AREA_SET_ENABLED'].includes(x.action)) {
   if(receipts.has(x.operationId))response=receipts.get(x.operationId);
   else {
    if(rejectSave||x.expectedRevision!==result.revision)return new Response(JSON.stringify({error:'公告已由其他操作更新，請重新整理後再編輯'}),{status:409});
-   result={hint:x.hint,revision:x.operationId};response=result;receipts.set(x.operationId,response);
+   result=x.action==='HINT_AREA_SAVE'?{hint:x.hint,enabled:result.enabled,revision:x.operationId}:{...result,enabled:x.enabled,revision:x.operationId};response=result;receipts.set(x.operationId,response);
    sessionStorage.setItem('hint',JSON.stringify(result));sessionStorage.setItem('receipts',JSON.stringify([...receipts]));
    if(failAfterWrite){failAfterWrite=false;throw Error('Lost response');}
   }
@@ -75,12 +75,24 @@ window.fetch=async(url,options)=>{
     await fill('.hint-times label:nth-child(2) input','2027-01-02T00:00');
     await fill('input:not([type])','2027 活動 <img src=x>');
     await fill('textarea','完整說明\n第二行');
-    await click('預覽公告');await wait(`document.querySelector('dialog').open`);
+    await click('預覽');await wait(`document.querySelector('dialog').open`);
     assert.equal(await run(`document.querySelector('dialog p').textContent`),'完整說明\n第二行');
     assert.equal(await run(`document.querySelector('dialog img')===null`),true);await click('知道了');
-    await click('儲存公告');await wait(`document.querySelector('.hint-feedback')?.textContent==='公告已儲存。'`);
+    await click('儲存');await wait(`document.querySelector('.hint-feedback')?.textContent==='公告已儲存。'`);
     assert.equal(await run('result.hint.start'),Date.parse('2027-01-01T00:00:00+08:00'));
     assert.equal(await run('result.hint.end'),Date.parse('2027-01-02T00:00:00+08:00'));
+    assert.equal(await run(`document.querySelector('.hint-status').textContent`),'已停用');
+    assert.deepEqual(await run(`[...document.querySelectorAll('.hint-actions button')].map(b=>b.textContent)`),['儲存','預覽','啟用','停用']);
+    await click('啟用');await wait(`document.querySelector('.hint-feedback')?.textContent==='公告已啟用。'`);
+    assert.equal(await run(`document.querySelector('.hint-status').textContent`),'已啟用・尚未開始');
+    await fill('input:not([type])','尚未儲存的修改');
+    await click('停用');await wait(`document.querySelector('.hint-feedback')?.textContent==='公告已停用。'`);
+    assert.equal(await run(`document.querySelector('input:not([type])').value`),'尚未儲存的修改');
+    assert.equal(await run(`result.hint.title`),'2027 活動 <img src=x>');
+    assert.equal(await run(`document.querySelector('[data-syslog="hint.enable"]').disabled`),true);
+    await click('儲存');await wait(`document.querySelector('.hint-feedback')?.textContent==='公告已儲存。'`);
+    assert.equal(await run('result.enabled'),false);
+    await click('啟用');await wait(`document.querySelector('.hint-feedback')?.textContent==='公告已啟用。'`);
     const title='2027 行銷活動公告 '.repeat(8);
     await fill('input:not([type])',title);await fill('textarea','完整活動說明\n'.repeat(100));
     for(const width of [1440,390]) {
@@ -88,20 +100,36 @@ window.fetch=async(url,options)=>{
       assert.equal(await run('document.documentElement.scrollWidth<=innerWidth'),true);
       await send('Page.captureScreenshot',{format:'png'}).then(r=>fs.writeFileSync(`/private/tmp/lotus-hint-wa-${width}.png`,Buffer.from(r.data,'base64')));
     }
-    await run('failAfterWrite=true');await click('儲存公告');await wait(`document.querySelector('.hint-feedback')?.textContent.includes('待確認')`);
+    await run('failAfterWrite=true');await click('儲存');await wait(`document.querySelector('.hint-feedback')?.textContent.includes('待確認')`);
     assert.equal(await run(`document.querySelector('button[type=submit]').disabled`),true);
     const original = await run(`calls.filter(c=>c.action==='HINT_AREA_SAVE').at(-1).operationId`);
     await send('Page.reload');await wait(`document.querySelector('.hint-feedback')?.textContent.includes('待確認')`);
     await click('重試原操作');await wait(`document.querySelector('.hint-feedback')?.textContent==='公告已儲存。'`);
     assert.equal(await run(`calls.find(c=>c.action==='HINT_AREA_SAVE').operationId`),original);
-    await run('rejectSave=true');await fill('input:not([type])','競爭更新');await click('儲存公告');
+    await run('rejectSave=true');await fill('input:not([type])','競爭更新');await click('儲存');
     await wait(`document.querySelector('.hint-feedback')?.textContent.includes('其他操作更新')`);
     assert.equal(await run(`document.querySelector('button[type=submit]').disabled`),true);
     await run('rejectSave=false');await click('重新整理');await wait(`!document.querySelector('button[type=submit]').disabled`);
-    await run('window.confirm=()=>true');await click('撤下公告');await wait(`document.querySelector('.hint-status').textContent==='尚無公告'`);
+    assert.equal(await run('result.enabled'),true);
+    const kept = await run('result.hint');
+    await run('failAfterWrite=true');await click('停用');await wait(`document.querySelector('.hint-feedback')?.textContent.includes('待確認')`);
+    const toggleId=await run(`calls.filter(c=>c.action==='HINT_AREA_SET_ENABLED').at(-1).operationId`);
+    await send('Page.reload');await wait(`document.querySelector('.hint-feedback')?.textContent.includes('待確認')`);
+    await click('重試原操作');await wait(`document.querySelector('.hint-status').textContent==='已停用'`);
+    assert.equal(await run(`calls.find(c=>c.action==='HINT_AREA_SET_ENABLED').operationId`),toggleId);
+    assert.deepEqual(await run('result.hint'),kept);
+    assert.equal(await run(`document.querySelector('input:not([type])').value`),kept.title);
+    await click('啟用');await wait(`document.querySelector('.hint-feedback')?.textContent==='公告已啟用。'`);
+    for(const [delta,label] of [[-1000,'顯示中'],[1000,'已啟用・尚未開始']]) {
+      await run(`result.hint.start=Date.now()+${delta};result.hint.end=Date.now()+60000`);
+      await click('重新整理');await wait(`document.querySelector('.hint-status').textContent==='${label}'`);
+    }
+    await run('result.hint.end=Date.now()-1000;result.hint.start=Date.now()-60000');
+    await click('重新整理');await wait(`document.querySelector('.hint-status').textContent==='已結束'`);
+    await click('停用');await wait(`document.querySelector('.hint-status').textContent==='已停用'`);
     await run('hold=true');await click('重新整理');await wait('!!window.release');await run("changeUser(null);release()");
     assert.equal(await run(`document.querySelector('button[type=submit]').disabled`),true);
     assert.equal(await run(`document.querySelector('input:not([type])').value`),'');
-    assert.deepEqual(errors,[]);console.log('PASS wA hintArea: Taiwan time, save/read, safe preview, responsive, lost response/reload replay, stale edit, withdrawal, logout late response');
+    assert.deepEqual(errors,[]);console.log('PASS wA hintArea: Taiwan time, save/read, safe preview, responsive, lost response/reload replay, stale edit, enable/disable, unsaved edits, toggle replay, display states, logout late response');
   } finally { ws?.close(); chrome.kill(); await new Promise(r=>server.close(r)); }
 })().catch(error=>{console.error(error);process.exitCode=1});
