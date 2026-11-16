@@ -4,14 +4,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase/config';
 import { adminApi, AdminApiError } from '../lib/adminApi';
+import {useCommonToast} from './CommonToast';
 
+type Audience = 'PASSENGER' | 'DRIVER';
 type Hint = { start: number; end: number; title: string; detail: string };
 type Result = { hint: Hint | null; revision: string | null; enabled: boolean };
-type Request = { operationId: string; expectedRevision: string | null } & (
+type Request = { audience?: Audience; operationId: string; expectedRevision: string | null } & (
   { action: 'HINT_AREA_SAVE'; hint: Hint | null } | { action: 'HINT_AREA_SET_ENABLED'; enabled: boolean }
 );
 type Pending = { owner: string; request: Request };
-const key = (uid: string) => `lotus-hint-area:${uid}`;
+const key = (uid: string, audience: Audience) => `lotus-hint-area:${uid}${audience === 'PASSENGER' ? ':PASSENGER' : ''}`;
 const displayTime = (value: number) => new Date(value + 8 * 3600000).toISOString().slice(0, 16);
 function parseTime(value: string) {
   const result = Date.parse(`${value}:00+08:00`);
@@ -19,6 +21,22 @@ function parseTime(value: string) {
 }
 
 export default function HintAreaManager() {
+  const [audience, setAudience] = useState<Audience>('PASSENGER');
+  return <div className="hint-audiences">
+    <div className="hint-audience-actions" aria-label="公告對象">
+      {(['PASSENGER', 'DRIVER'] as const).map(value => <button key={value} type="button"
+        className={audience === value ? 'btn-primary' : 'btn-secondary'} aria-pressed={audience === value}
+        data-syslog={`hint.audience.${value}`} onClick={() => setAudience(value)}>{value === 'PASSENGER' ? '乘客端公告' : '司機端公告'}</button>)}
+    </div>
+    {(['PASSENGER', 'DRIVER'] as const).map(value => <div key={value} hidden={audience !== value}>
+      <HintEditor audience={value} />
+    </div>)}
+  </div>;
+}
+
+function HintEditor({audience}: {audience: Audience}) {
+  const commonToast = useCommonToast();
+  const audienceTitle = audience === 'PASSENGER' ? '乘客端公告' : '司機端公告';
   const [collapsed, setCollapsed] = useState(false);
   const [saved, setSaved] = useState<Result>({ hint: null, revision: null, enabled: false });
   const [start, setStart] = useState(''), [end, setEnd] = useState('');
@@ -42,14 +60,14 @@ export default function HintAreaManager() {
     if (!uid || flight.current || pendingRef.current) return;
     flight.current = true; setBusy(true); setReady(false); setMessage('');
     try {
-      const result = await adminApi<Result>({ action: 'HINT_AREA_GET' });
+      const result = await adminApi<Result>({ action: 'HINT_AREA_GET', audience });
       if (generation === scope.current && auth.currentUser?.uid === uid) apply(result);
     } catch (error) {
       if (generation === scope.current) setMessage(error instanceof Error ? error.message : '公告讀取失敗，請重新整理。');
     } finally {
       if (generation === scope.current) { flight.current = false; setBusy(false); }
     }
-  }, [apply]);
+  }, [apply, audience]);
   useEffect(() => {
     const invalidate = () => { scope.current++; owner.current = null; };
     const stop = onAuthStateChanged(auth, user => {
@@ -59,10 +77,10 @@ export default function HintAreaManager() {
       setSaved({ hint: null, revision: null, enabled: false }); setStart(''); setEnd(''); setTitle(''); setDetail('');
       if (!user) return;
       try {
-        const raw = sessionStorage.getItem(key(user.uid));
+        const raw = sessionStorage.getItem(key(user.uid, audience));
         if (raw) {
           const value: Pending = JSON.parse(raw);
-          if (value.owner !== user.uid || !['HINT_AREA_SAVE', 'HINT_AREA_SET_ENABLED'].includes(value.request?.action) || !value.request.operationId)
+          if ((value.request?.audience ?? 'DRIVER') !== audience || value.owner !== user.uid || !['HINT_AREA_SAVE', 'HINT_AREA_SET_ENABLED'].includes(value.request?.action) || !value.request.operationId)
             throw Error('Invalid journal');
           pendingRef.current = value; setPending(value);
           setMessage('上次公告操作結果待確認，請重試原操作。');
@@ -71,7 +89,7 @@ export default function HintAreaManager() {
     });
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => { invalidate(); stop(); clearInterval(timer); };
-  }, [load]);
+  }, [load, audience]);
   useEffect(() => {
     if (preview && !dialog.current?.open) dialog.current?.showModal();
     if (!preview) dialog.current?.close();
@@ -85,18 +103,18 @@ export default function HintAreaManager() {
     try {
       const changed = await adminApi<Result>(value.request);
       if (!current()) return;
-      sessionStorage.removeItem(key(value.owner)); pendingRef.current = null; setPending(null);
+      sessionStorage.removeItem(key(value.owner, audience)); pendingRef.current = null; setPending(null);
       // 回放舊操作可能已有更新版本；成功後重新取得目前公告。
-      const latest = await adminApi<Result>({ action: 'HINT_AREA_GET' });
+      const latest = await adminApi<Result>({ action: 'HINT_AREA_GET', audience });
       if (!current()) return;
       if (preserveEdits && latest.revision === changed.revision) { setSaved(latest); setReady(true); } else apply(latest);
-      setMessage(value.request.action === 'HINT_AREA_SET_ENABLED'
-        ? value.request.enabled ? '公告已啟用。' : '公告已停用。'
-        : value.request.hint ? '公告已儲存。' : '公告已停用。');
+      commonToast(audienceTitle + (value.request.action === 'HINT_AREA_SET_ENABLED'
+        ? value.request.enabled ? '已啟用。' : '已停用。'
+        : value.request.hint ? '已儲存。' : '已停用。'));
     } catch (error) {
       if (!current()) return;
       if (error instanceof AdminApiError && !error.uncertain) {
-        try { sessionStorage.removeItem(key(value.owner)); pendingRef.current = null; setPending(null); } catch { /* 保留原請求供安全重試。 */ }
+        try { sessionStorage.removeItem(key(value.owner, audience)); pendingRef.current = null; setPending(null); } catch { /* 保留原請求供安全重試。 */ }
         setReady(false); setMessage(error.message);
       } else {
         setReady(false);
@@ -114,17 +132,17 @@ export default function HintAreaManager() {
     if (hint && (!hint.title || !hint.detail || hint.title.length > 120 || hint.detail.length > 6000)) {
       setMessage('請填寫標題（最多120字元）與完整內容（最多6000字元）。'); return;
     }
-    const value: Pending = { owner: uid, request: { action: 'HINT_AREA_SAVE', operationId: crypto.randomUUID(), expectedRevision: saved.revision, hint } };
+    const value: Pending = { owner: uid, request: { audience, action: 'HINT_AREA_SAVE', operationId: crypto.randomUUID(), expectedRevision: saved.revision, hint } };
     submit(value);
   }
   function setEnabled(enabled: boolean) {
     const uid = owner.current;
     if (!uid || auth.currentUser?.uid !== uid || !ready || flight.current || pendingRef.current || !saved.hint) return;
     if (enabled && dirty) { setMessage('內容尚未儲存，請先儲存再啟用。'); return; }
-    submit({ owner: uid, request: { action: 'HINT_AREA_SET_ENABLED', operationId: crypto.randomUUID(), expectedRevision: saved.revision, enabled } }, true);
+    submit({ owner: uid, request: { audience, action: 'HINT_AREA_SET_ENABLED', operationId: crypto.randomUUID(), expectedRevision: saved.revision, enabled } }, true);
   }
   function submit(value: Pending, preserveEdits = false) {
-    try { sessionStorage.setItem(key(value.owner), JSON.stringify(value)); }
+    try { sessionStorage.setItem(key(value.owner, audience), JSON.stringify(value)); }
     catch { setMessage('無法保存操作紀錄，尚未送出公告。請確認瀏覽器儲存空間後重試。'); return; }
     pendingRef.current = value; setPending(value); void send(value, preserveEdits);
   }
@@ -133,11 +151,11 @@ export default function HintAreaManager() {
     || title !== saved.hint.title || detail !== saved.hint.detail);
   const status = !ready ? '等待讀取' : !saved.hint ? '尚無公告'
     : !saved.enabled ? '已停用' : now < saved.hint.start ? '已啟用・尚未開始' : now >= saved.hint.end ? '已結束' : '顯示中';
-  return <section className="glass content-sheet animate-fade-in hint-manager">
+  return <section className="glass content-sheet animate-fade-in hint-manager" data-audience={audience}>
     <div className="sheet-title-row">
-      <h2 className="sheet-title">公告</h2>
+      <h2 className="sheet-title">{audienceTitle}</h2>
       <div className="hint-header-actions">
-      <button type="button" className="btn-secondary" data-syslog="hint.collapse" aria-expanded={!collapsed} aria-controls="hint-editor" onClick={() => setCollapsed(value => !value)}>{collapsed ? '展開' : '收合'}</button>
+      <button type="button" className="btn-secondary" data-syslog="hint.collapse" aria-expanded={!collapsed} aria-controls={`hint-editor-${audience}`} onClick={() => setCollapsed(value => !value)}>{collapsed ? '展開' : '收合'}</button>
       <button className="btn-secondary" data-syslog="hint.refresh" disabled={busy || !!pending} onClick={() => void load()}>重新整理</button>
       </div>
     </div>
@@ -145,8 +163,8 @@ export default function HintAreaManager() {
     {collapsed && <p className="hint-guidance">{saved.hint?.title || '尚無公告標題'}{dirty && '（內容尚未儲存）'}</p>}
     {message && <p className="hint-feedback" role="status">{message}</p>}
     {pending && <button className="btn-secondary" data-syslog="hint.retry" disabled={busy} onClick={() => void send(pending)}>重試原操作</button>}
-    <form id="hint-editor" hidden={collapsed} onSubmit={event => { event.preventDefault(); save(); }}>
-      <p className="hint-guidance">{saved.enabled ? '啟用中，儲存後會更新雙端公告。' : '儲存保留內容，啟用後才會依公告時間顯示。'}{dirty && ' 內容尚未儲存。'}</p>
+    <form id={`hint-editor-${audience}`} hidden={collapsed} onSubmit={event => { event.preventDefault(); save(); }}>
+      <p className="hint-guidance">{saved.enabled ? `啟用中，儲存後會更新${audienceTitle}。` : '儲存保留內容，啟用後才會依公告時間顯示。'}{dirty && ' 內容尚未儲存。'}</p>
       <fieldset disabled={disabled}>
         <div className="hint-times">
           <label>公告開始時間<input type="datetime-local" step="60" value={start} required onChange={e => setStart(e.target.value)} /></label>
@@ -162,8 +180,8 @@ export default function HintAreaManager() {
         <button type="button" className="btn-secondary" data-syslog="hint.disable" disabled={disabled || !saved.hint || !saved.enabled} onClick={() => setEnabled(false)}>停用</button>
       </div>
     </form>
-    <dialog ref={dialog} className="hint-preview" aria-labelledby="hint-preview-title" onClose={() => setPreview(false)}>
-      <h3 id="hint-preview-title">{title}</h3><p>{detail}</p>
+    <dialog ref={dialog} className="hint-preview" aria-labelledby={`hint-preview-title-${audience}`} onClose={() => setPreview(false)}>
+      <h3 id={`hint-preview-title-${audience}`}>{title}</h3><p>{detail}</p>
       <button type="button" className="btn-secondary" onClick={() => setPreview(false)}>知道了</button>
     </dialog>
   </section>;

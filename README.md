@@ -1,20 +1,29 @@
 # LotusAH — Web 管理介面
 
-## 公告／維護分區與唯讀預覽（11/16）
+## 公告分端、commonToast 與維護簡化（11/16）
 
-HintAreaManager 保留四顆公告功能，新增收合／展開；MaintenanceManager 提供獨立預計開始／結束 picker、五顆按鈕及受影響訂單表。只接 MAINTENANCE_PREVIEW，三顆正式操作停用。時間條件只保留在本頁，與公告無關；API 取後端 nowMs。結果顯示查詢時間／區間、總數／實際行程數與取消原因；換時間標記需重新預覽，重新查詢清除舊結果，換身分／卸載隔離晚回應。完整結果採共用分頁，空清單不顯示分頁。
+HintAreaManager 可切換乘客端／司機端，兩份公告各有內容、時間、啟用及 revision；各自保留未存編輯與 sessionStorage 原請求。每端「儲存／預覽／啟用／停用」維持原契約；儲存不切換狀態、停用保留內容與時間，成功回饋改 Toast。
 
-sysLog 沿共用 UI／adminApi，另記預覽階段、數量及查詢時間；不記姓名地址。tests/maintenance.browser.cjs 為隔離 Chrome fixture，驗兩種預覽、停用按鈕、時間、分頁、過期結果、錯誤／空清單、身分隔離與版面。政策／部署／驗收見 root 營運部署與維護規劃及最新交接。
+HINT_AREA_GET／SAVE／SET_ENABLED 均帶 audience。司機沿 metadata/hintArea，乘客改 metadata/hintAreaPassenger；後端第一次管理寫入原子拆分舊共用公告並保留另一端，舊請求預設 DRIVER、舊回執可安全重試。Rules／LIFF 先更新，後端及 wA 接續；AOS 保持原文件路徑。舊 wA／LIFF 開啟頁面需重新整理。詳細契約與 Human Review Map 見 root 公告與hintArea功能說明。
 
-11/16 12:26:32 發布回讀完成：wA build-2026-11-16-004 READY／100%、53份來源與8個線上資產一致；webAdmin webadmin-00025-qez ACTIVE／100%。本機驗證通過。Ready 截圖已驗公告收合、PRE 過期開始時間拒絕，以及 start 14:00／end 15:00 下兩種預覽均列出 T30 13:52 的預約與待乘客決定即時單，各2筆。真正服務中與精確時間邊界目前由自動測試覆蓋；人工全項 TEST PASS 待回報。
+MaintenanceManager 保留正常營運／維護半開始（只出不進）／維護中三欄，當前高亮、按狀態啟用；兩種「當下時間起 預覽」及兩個 picker 維持。NORMAL／PRE 可編輯，START 唯讀；時間到達不自動切換。GET 回填已存計畫，輪詢保留 dirty 編輯；移除下方重複計畫／實際時間、完成文字、零筆總數及未查詢占位，預覽查詢後仍顯示清單。
 
-## 基本公告 hintArea（11/16）
+PRE／START／END／CANCEL_PRE 結果以 commonToast 顯示階段及非零取消筆數。未確認原請求或後端 processing 才顯示「接續處理」，正常完成後隱藏。此入口用於中斷／錯誤後繼續 CONTINUE 批次，後端尚無獨立 worker，因此保留條件式恢復能力。本人 localStorage、原 operationId、資格／CAS／回執與收尾 sysLog 維持；公告與維護無自動連動。
 
-選單「優惠券結帳 → 公告 & 維護 → 管理者管理」。HintAreaManager 管理一則 start／end／title／detail 公告，四顆功能按鈕為「儲存／預覽／啟用／停用」，右上保留重新整理。首次儲存預設停用；儲存維持現有狀態，啟用中儲存會更新雙端。停用保留內容及時間；有未存編輯先儲存才可啟用，停用成功保留畫面未存修改。
+## commonToast 共用單元
 
-現有 adminApi 接 HINT_AREA_GET／SAVE／SET_ENABLED。台灣時間輸入、純文字預覽；本人 sessionStorage 保留待確認的原操作，狀態操作亦可原 ID 重試；成功後重讀最新公告，過期版本要求重新整理。換帳號／卸載隔離晚回應。功能契約、Human Review Map、驗證與發布狀態見 Lotus root `02_現行定義/公告與hintArea功能說明.md` 及目前交接。維護 pre／start／end 尚未接入。
+根 layout 掛 CommonToastProvider；全站 Client Component 可使用：
 
-11/16 四按鈕已部署回讀：webAdmin webadmin-00024-tan、wA build-2026-11-16-002；來源與100%流量核對通過，本機測試通過，Ready 本輪人工驗收待進行。
+```tsx
+const commonToast = useCommonToast(); // from components/CommonToast
+commonToast('儲存完成。');
+```
+
+固定底部中央、3 秒自動消失、可手動關閉；最新提示取代舊提示，同文字再次觸發重計時。aria-live status、不移動焦點、支援窄版換行；身分改變清除、卸載清 timer。本輪只接公告及維護回饋，其他模組可後續採用。需要處理的錯誤／未確認操作仍保留頁面提示。
+
+sysLog client version=syslog-hint-audience-20261116；公告切對象記 hint.audience.PASSENGER／DRIVER，後端 HINT_* 追加 audience。原 maintenance.cancel_pre／maintenance.state、API／按鈕記錄維持。
+
+本輪 FF／wA build、定向 lint、111 Node、7 公告 Emulator 及 tests/hint-area.browser.cjs／maintenance.browser.cjs／LIFF hint-area Chrome 測試通過。涵蓋兩端獨立編輯／啟停、首次拆分與 Rules、重送／身分隔離、Toast 重計時／焦點／消失、異常接續與完成收起；1440／390px 版面已目視。正式部署回讀及 Ready 抽測見 root 最新交接。Agent 未代操作正式公告或訂單。
 
 ## 11/15 優惠券結帳身分欄排版與排序
 

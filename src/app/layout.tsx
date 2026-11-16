@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import {CommonToastProvider} from "../components/CommonToast";
 
 export const metadata: Metadata = {
   title: "Lotus Admin - 建豐車行後台管理系統",
@@ -14,7 +15,7 @@ export default function RootLayout({
   return (
     <html lang="zh-TW">
       <body>
-        {children}
+        <CommonToastProvider>{children}</CommonToastProvider>
       </body>
     </html>
   );

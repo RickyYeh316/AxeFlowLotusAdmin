@@ -15,12 +15,19 @@ export function onAuthStateChanged(_auth, callback) { listeners.add(callback); q
 window.changeUser = uid => { auth.currentUser = uid ? { uid, getIdToken: async () => 'fixture-token' } : null; listeners.forEach(fn => fn(auth.currentUser)); };
 `);
 const loader = write('loader.cjs', `const ts=require(${JSON.stringify(require.resolve('typescript'))});module.exports=function(source){return ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true},fileName:this.resourcePath}).outputText}`);
-const entry = write('entry.js', `import React from 'react'; import {createRoot} from 'react-dom/client'; import Manager from ${JSON.stringify(path.join(root,'src/components/HintAreaManager.tsx'))}; import Maintenance from ${JSON.stringify(path.join(root,'src/components/MaintenanceManager.tsx'))}; createRoot(document.getElementById('root')).render(React.createElement(React.Fragment,null,React.createElement(Manager),React.createElement(Maintenance)));`);
+const entry = write('entry.js', `import React from 'react'; import {createRoot} from 'react-dom/client'; import Manager from ${JSON.stringify(path.join(root,'src/components/HintAreaManager.tsx'))}; import Maintenance from ${JSON.stringify(path.join(root,'src/components/MaintenanceManager.tsx'))}; import {CommonToastProvider} from ${JSON.stringify(path.join(root,'src/components/CommonToast.tsx'))}; const root=createRoot(document.getElementById('root'));let key=0;window.remount=()=>root.render(React.createElement(CommonToastProvider,null,React.createElement(Manager),React.createElement(Maintenance,{key:++key})));window.remount();`);
 const fixture = `
-window.calls=[];window.hold=false;window.fail=false;window.empty=false;window.logs=[];
+window.control={state:{phase:'NORMAL',revision:null,processing:false},operation:null};window.confirm=()=>true;window.calls=[];window.hold=false;window.fail=false;window.empty=false;window.logs=[];
+window.operations={};const originalInterval=window.setInterval;window.setInterval=(fn,ms)=>{if(ms===15000)window.pollMaintenance=fn;return originalInterval(fn,ms);};
 window.fetch=async(url,options)=>{
  if(url!=='https://asia-east1-axeflowlotus-6dc3b.cloudfunctions.net/webAdmin')throw Error('Unexpected network');
  const x=JSON.parse(options.body);calls.push(x);
+ if(x.action==='MAINTENANCE_GET'){const snapshot=JSON.stringify(window.control);if(window.holdGet)await new Promise(r=>window.releaseGet=r);return new Response(snapshot);}
+ if(x.action==='MAINTENANCE_TRANSITION'){
+  if(window.rejectTransition){window.rejectTransition=false;return new Response(JSON.stringify({error:'預計維護時間已到，請調整後再操作'}),{status:400});}
+  if(!operations[x.operationId]){operations[x.operationId]=true;const restore=x.phase==='CANCEL_PRE';window.control={state:{...control.state,phase:restore?'NORMAL':x.phase==='END'?'START':x.phase,revision:x.operationId,operationId:x.operationId,processing:!restore,...(x.plannedStartMs?{plannedStartMs:x.plannedStartMs,plannedEndMs:x.plannedEndMs}:{}),...(x.phase==='PRE'?{preStartedAtMs:Date.now(),startedAtMs:null,endedAtMs:null}:x.phase==='START'?{startedAtMs:Date.now()}:restore?{endedAtMs:Date.now()}: {})},operation:{id:x.operationId,phase:x.phase,nowMs:Date.now(),status:restore?'COMPLETE':'PROCESSING',total:restore?0:1,todo:restore?[]:['test-order'],cancelled:0,skipped:0}};}
+  if(window.loseTransition){window.loseTransition=false;throw TypeError('fixture response lost');}return new Response(JSON.stringify({operationId:x.operationId}));}
+ if(x.action==='MAINTENANCE_CONTINUE'){if(window.failContinue){window.failContinue=false;window.control.operation.status='ERROR';window.control.operation.error={code:'DATA_CONFLICT',orderId:'test-order'};return new Response(JSON.stringify(window.control));}if(control.operation.status!=='COMPLETE'){window.control.state.processing=false;if(control.operation.phase==='END'){control.state.phase='NORMAL';control.state.endedAtMs=Date.now();}window.control.operation={...window.control.operation,status:'COMPLETE',todo:[],cancelled:1};}return new Response(JSON.stringify(window.control));}
  if(x.action==='HINT_AREA_GET')return new Response(JSON.stringify({hint:{start:1,end:2,title:'獨立公告',detail:'公告內容'},enabled:false,revision:'test'}));
  if(x.action!=='MAINTENANCE_PREVIEW')throw Error('Unexpected mutation');
  if(hold)await new Promise(resolve=>window.release=resolve);
@@ -57,51 +64,88 @@ window.fetch=async(url,options)=>{
     const run=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});assert.equal(r.exceptionDetails,undefined,JSON.stringify(r.exceptionDetails));return r.result.value;};
     const wait=async expression=>{for(let i=0;i<250;i++){if(await run(expression))return;await new Promise(r=>setTimeout(r,30));}assert.fail(expression);};
     const click=label=>run(`[...document.querySelectorAll('button')].find(b=>b.textContent===${JSON.stringify(label)}).click()`);
-    const category=value=>run(`document.querySelector('[data-syslog="settlement.filter.${value}"]').click()`);
+    const action=value=>run(`document.querySelector('[data-syslog="maintenance.${value}"]').click()`);
+    const matrix=()=>run(`[...document.querySelectorAll('.maintenance-actions button')].map(b=>b.disabled)`);
+    const startInput='[aria-label="預計維護開始時間"]',endInput='[aria-label="預計維護結束時間"]';
     const fill=async(selector,value)=>{await run(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(el instanceof HTMLSelectElement?HTMLSelectElement.prototype:el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));})()`);};
     await send('Runtime.enable');await send('Page.enable');
     await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
     await send('Page.navigate',{url:`http://127.0.0.1:${server.address().port}`});
 
     await wait(`document.querySelector('.hint-status')?.textContent==='已停用'`);
-    assert.deepEqual(await run(`[...document.querySelectorAll('.maintenance-actions button')].map(b=>b.disabled)`),[false,true,false,true,true]);
-    await click('收合');assert.equal(await run(`document.querySelector('#hint-editor').hidden`),true);
-    assert.equal(await run(`document.querySelector('.hint-manager').textContent.includes('獨立公告')`),true);
-    await click('展開');assert.equal(await run(`document.querySelector('#hint-editor').hidden`),false);
-    await click('維護半開始（預覽）');assert.equal(await run(`calls.filter(x=>x.action==='MAINTENANCE_PREVIEW').length`),0);
-    await fill('.maintenance-times label:nth-child(1) input','2027-01-01T02:00');
-    await fill('.maintenance-times label:nth-child(2) input','2027-01-01T04:00');
-    await click('維護半開始（預覽）');await wait(`document.querySelector('.maintenance-result h3')?.textContent.includes('13 筆')`);
+    await wait(`document.querySelector('.maintenance-status')?.textContent==='正常營運'`);
+    assert.deepEqual(await matrix(),[false,false,true,true,true,true]);
+    assert.equal(await run(`document.querySelector('[aria-current="step"]').dataset.phase`),'NORMAL');
+    await click('收合');assert.equal(await run(`document.querySelector('#hint-editor-PASSENGER').hidden`),true);
+    await click('展開');assert.equal(await run(`document.querySelector('#hint-editor-PASSENGER').hidden`),false);
+    await action('preview_pre');assert.equal(await run(`calls.filter(x=>x.action==='MAINTENANCE_PREVIEW').length`),0);
+    assert.equal(await run(`document.querySelector('[aria-label="預計維護開始時間"]').disabled`),false);
+    await fill(startInput,'2027-01-01T02:00');await fill(endInput,'2027-01-01T04:00');
+    await action('preview_pre');await wait(`document.querySelector('.maintenance-result h3')?.textContent.includes('13 筆')`);
     assert.equal(await run(`calls.at(-1).plannedStartMs`),Date.parse('2027-01-01T02:00:00+08:00'));
     assert.equal(await run(`calls.at(-1).nowMs`),undefined);
     assert.equal(await run(`document.querySelectorAll('.maintenance-table tbody tr').length`),10);
     assert.equal(await run(`document.querySelectorAll('.maintenance-result img').length`),0);
     assert.equal(await run(`document.querySelector('.maintenance-result').textContent.includes('2026/11/16 01:30:00')`),true);
     await click('下一頁');assert.equal(await run(`document.querySelectorAll('.maintenance-table tbody tr').length`),3);
-    await fill('.maintenance-times label:nth-child(1) input','2027-01-01T03:00');
-    await wait(`document.querySelector('.maintenance-stale')?.textContent.includes('請重新預覽')`);
-    await click('維護開始（預覽）');await wait(`document.querySelector('.maintenance-result h3')?.textContent.startsWith('維護開始')`);
-    assert.equal(await run(`document.querySelectorAll('.maintenance-table tbody tr').length`),10);
-    assert.equal(await run(`!!document.querySelector('.maintenance-stale')`),false);
+    await fill(startInput,'2027-01-01T03:00');
+    await wait(`[...document.querySelectorAll('.maintenance-stale')].some(x=>x.textContent.includes('請重新預覽'))`);
+    await run('hold=true');await action('preview_pre');await wait('!!window.release');
+    await fill(endInput,'2027-01-01T05:00');await run('release();hold=false');
+    await wait(`!!document.querySelector('.maintenance-result')`);
+    assert.equal(await run(`[...document.querySelectorAll('.maintenance-stale')].some(x=>x.textContent.includes('請重新預覽'))`),true);
+    await run('fail=true');await action('preview_pre');await wait(`document.querySelector('.common-toast span')?.textContent.includes('預覽未完成')`);
+    assert.equal(await run(`document.querySelectorAll('.maintenance-result').length`),0);
+    await run('fail=false;empty=true');await action('preview_pre');await wait(`!!document.querySelector('.maintenance-empty')`);
+    assert.equal(await run(`document.querySelectorAll('.list-pagination').length`),0);
+    // 確定驗證失敗與不確定的網路回應分開。
+    await run('window.rejectTransition=true');await action('pre');
+    await wait(`document.querySelector('.common-toast span')?.textContent.startsWith('操作未完成。')`);
+    assert.equal(await run('localStorage.length'),0);
+    await run('window.loseTransition=true;window.failContinue=true');await action('pre');
+    await wait(`document.querySelector('.maintenance-manager .hint-feedback')?.textContent.includes('結果待確認')`);
+    assert.equal(await run('localStorage.length'),1);
+    await run('remount()');await wait(`!!document.querySelector('[data-syslog="maintenance.resume"]') && !document.querySelector('[data-syslog="maintenance.resume"]').disabled`);
+    await click('接續處理');await wait(`[...document.querySelectorAll('.maintenance-manager .hint-feedback')].some(x=>x.textContent.includes('收尾待重試'))`);
+    assert.equal(await run(`calls.filter(x=>x.action==='MAINTENANCE_TRANSITION').at(-1).operationId===calls.filter(x=>x.action==='MAINTENANCE_TRANSITION').at(-2).operationId`),true);
+    assert.deepEqual(await matrix(),[true,true,true,true,true,true]);
+    await click('接續處理');await wait(`document.querySelector('.maintenance-status').textContent==='維護半開始（只出不進）'`);
+    assert.deepEqual(await matrix(),[true,true,false,false,false,true]);
+    await run('remount()');await wait(`document.querySelector('[aria-label="預計維護開始時間"]')?.value==='2027-01-01T03:00'`);
+    assert.equal(await run(`document.querySelector('[aria-label="預計維護結束時間"]').value`),'2027-01-01T05:00');
+    assert.equal(await run(`!!document.querySelector('[data-syslog="maintenance.resume"]')`),false);
+    assert.equal(await run(`!!document.querySelector('.maintenance-effective')`),false);
+    await fill(startInput,'2027-01-01T03:30');await run('pollMaintenance()');
+    assert.equal(await run(`document.querySelector('[aria-label="預計維護開始時間"]').value`),'2027-01-01T03:30');
+    assert.equal(await run('control.state.plannedStartMs'),Date.parse('2027-01-01T03:00:00+08:00'));
+    await run('empty=false');await action('preview_start');await wait(`document.querySelector('.maintenance-result h3')?.textContent.startsWith('維護開始')`);
     await click('收合');
     for(const width of [1440,390]){
       await send('Emulation.setDeviceMetricsOverride',{width,height:1000,deviceScaleFactor:1,mobile:false});
       assert.equal(await run('document.documentElement.scrollWidth<=innerWidth'),true);
-      await send('Page.captureScreenshot',{format:'png'}).then(r=>fs.writeFileSync(`/private/tmp/lotus-maintenance-wa-${width}.png`,Buffer.from(r.data,'base64')));
+      await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true}).then(r=>fs.writeFileSync(`/private/tmp/lotus-maintenance-columns-${width}.png`,Buffer.from(r.data,'base64')));
     }
-    await run('hold=true');await click('維護半開始（預覽）');await wait('!!window.release');
-    assert.equal(await run(`document.querySelectorAll('.maintenance-result').length`),0);
-    await fill('.maintenance-times label:nth-child(2) input','2027-01-01T05:00');await run('release();hold=false');
-    await wait(`!!document.querySelector('.maintenance-result')`);assert.equal(await run(`!!document.querySelector('.maintenance-stale')`),true);
-    await run('fail=true');await click('維護半開始（預覽）');await wait(`document.querySelector('.maintenance-manager .hint-feedback')?.textContent.includes('預覽未完成')`);
-    assert.equal(await run(`document.querySelectorAll('.maintenance-result').length`),0);
-    await run('fail=false;empty=true');await click('維護開始（預覽）');await wait(`!!document.querySelector('.maintenance-empty')`);
-    assert.equal(await run(`document.querySelectorAll('.list-pagination').length`),0);
-    await run('empty=false;hold=true;window.release=null');await click('維護開始（預覽）');await wait('!!window.release');
+    // 舊輪詢不可覆蓋剛完成的恢復操作；恢復不帶時間，也不呼叫公告 API。
+    await run('holdGet=true;pollMaintenance()');await wait('!!window.releaseGet');
+    await action('cancel_pre');await wait(`document.querySelector('.maintenance-status').textContent==='正常營運'`);
+    await run('holdGet=false;releaseGet()');await new Promise(r=>setTimeout(r,100));
+    assert.equal(await run(`document.querySelector('.maintenance-status').textContent`),'正常營運');
+    assert.equal(await run(`calls.filter(x=>x.phase==='CANCEL_PRE').at(-1).plannedStartMs`),undefined);
+    assert.equal(await run(`document.querySelector('[aria-current="step"]').dataset.phase`),'NORMAL');
+    await action('pre');await wait(`document.querySelector('.maintenance-status').textContent==='維護半開始（只出不進）'`);
+    await action('start');await wait(`document.querySelector('.maintenance-status').textContent==='維護中'`);
+    assert.deepEqual(await matrix(),[true,true,true,true,true,false]);
+    assert.equal(await run(`document.querySelector('[aria-label="預計維護結束時間"]').disabled`),true);
+    await action('end');await wait(`document.querySelector('.maintenance-status').textContent==='正常營運'`);
+    assert.equal(await run(`localStorage.length`),0);
+    assert.equal(await run(`!!document.querySelector('[data-syslog="maintenance.resume"]')`),false);
+    assert.equal(await run(`!!document.querySelector('.maintenance-manager .hint-guidance')`),false);
+    await wait(`document.querySelector('.common-toast span')?.textContent.startsWith('已恢復正常營運')`);
+    await run('hold=true;window.release=null');await action('preview_pre');await wait('!!window.release');
     await run('changeUser(null);release()');await wait(`document.querySelector('.maintenance-actions button').disabled`);
     assert.equal(await run(`document.querySelectorAll('.maintenance-result').length`),0);
     assert.equal(await run(`document.querySelector('.maintenance-times input').value`),'');
-    assert.equal(await run(`calls.every(x=>['HINT_AREA_GET','MAINTENANCE_PREVIEW'].includes(x.action))`),true);
-    assert.deepEqual(errors,[]);console.log('PASS maintenance UI: collapse, independent pickers, server clock, two previews, disabled actions, paging, stale edits, failure/empty, logout, safe text, responsive');
+    assert.equal(await run(`calls.every(x=>['HINT_AREA_GET','MAINTENANCE_PREVIEW','MAINTENANCE_GET','MAINTENANCE_TRANSITION','MAINTENANCE_CONTINUE'].includes(x.action))`),true);
+    assert.deepEqual(errors,[]);console.log('PASS maintenance columns: state matrix, recovery, saved plan remount, dirty edits, stale polling, retry, preview, auth, paging, safe text, responsive');
   } finally { ws?.close(); chrome.kill(); await new Promise(r=>server.close(r)); }
 })().catch(error=>{console.error(error);process.exitCode=1});
