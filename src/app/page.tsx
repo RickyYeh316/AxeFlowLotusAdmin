@@ -12,6 +12,7 @@ import {
   ClipboardList, 
   Tag,
   Receipt,
+  Megaphone,
   Shield, 
   LogOut,
   MapPin,
@@ -29,6 +30,7 @@ import UserManager from '../components/UserManager';
 import OrderManager from '../components/OrderManager';
 import MarketingManager from '../components/MarketingManager';
 import CouponSettlementManager from '../components/CouponSettlementManager';
+import HintAreaManager from '../components/HintAreaManager';
 import AdminManager from '../components/AdminManager';
 
 interface AdminUser {
@@ -134,6 +136,7 @@ export default function Home() {
       case 'orders': return <ClipboardList size={12} />;
       case 'marketing': return <Tag size={12} />;
       case 'couponSettlement': return <Receipt size={12} />;
+      case 'hintArea': return <Megaphone size={12} />;
       case 'admins': return <Shield size={12} />;
       default: return <LayoutDashboard size={12} />;
     }
@@ -148,6 +151,7 @@ export default function Home() {
       case 'orders': return '訂單管理';
       case 'marketing': return '優惠券管理';
       case 'couponSettlement': return '優惠券結帳';
+      case 'hintArea': return '公告 & 維護';
       case 'admins': return '管理者管理';
       default: return '儀表板總覽';
     }
@@ -189,6 +193,8 @@ export default function Home() {
         return <CouponSettlementManager />;
       case 'admins':
         return <AdminManager currentAdminEmail={adminUser.email} />;
+      case 'hintArea':
+        return <HintAreaManager />;
       default:
         return <Overview onNavigate={handleNavigate} />;
     }
@@ -277,6 +283,14 @@ export default function Home() {
           </button>
 
           <button 
+            onClick={() => handleNavigate('hintArea')}
+            className={`menu-item ${activeTab === 'hintArea' ? 'active' : ''}`}
+            title="公告 & 維護"
+          >
+            <Megaphone size={18} />
+            {!sidebarCollapsed && <span>公告 &amp; 維護</span>}
+          </button>
+          <button
             onClick={() => handleNavigate('admins')}
             className={`menu-item ${activeTab === 'admins' ? 'active' : ''}`}
             title="管理者管理"

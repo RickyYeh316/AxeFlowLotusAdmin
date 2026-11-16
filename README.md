@@ -1,5 +1,11 @@
 # LotusAH — Web 管理介面
 
+## 基本公告 hintArea（11/16）
+
+選單「優惠券結帳 → 公告 & 維護 → 管理者管理」。HintAreaManager 編輯一則 start／end／title／detail 公告，台灣時間輸入、純文字預覽及撤下；現有 adminApi 接 HINT_AREA_GET／SAVE。本人 sessionStorage 保留待確認的原操作；重試使用原 operationId，成功後重讀最新公告，過期版本要求重新整理。換帳號／卸載隔離晚回應。
+
+功能契約及 Human Review Map 見 Lotus root `02_現行定義/公告與hintArea功能說明.md`。維護 pre／start／end 尚未接入。本機正式建置、定向 lint、`node tests/hint-area.browser.cjs` 隔離 Chrome（時間／儲存／重送／競爭／撤下／身分／響應式）通過；build-2026-11-15-018 已 READY／SUCCEEDED／100% 流量，52 份來源／設定與 8 個線上資產已核對，真人驗收待進行。
+
 ## 11/15 優惠券結帳身分欄排版與排序
 
 已對齊訂單管理：第一行顯示乘客姓名／編號，第二行顯示白底紅字車牌及司機姓名。乘客姓名、乘客編號、車號司機提供三個獨立升降冪排序入口；排序圖示跟隨目前欄位，切排序回第一頁。未結帳為五欄，已結帳／全部為六欄（增加結帳時間）；預設仍依使用時間新到舊。
