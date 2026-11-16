@@ -19,6 +19,7 @@ function parseTime(value: string) {
 }
 
 export default function HintAreaManager() {
+  const [collapsed, setCollapsed] = useState(false);
   const [saved, setSaved] = useState<Result>({ hint: null, revision: null, enabled: false });
   const [start, setStart] = useState(''), [end, setEnd] = useState('');
   const [title, setTitle] = useState(''), [detail, setDetail] = useState('');
@@ -134,14 +135,18 @@ export default function HintAreaManager() {
     : !saved.enabled ? '已停用' : now < saved.hint.start ? '已啟用・尚未開始' : now >= saved.hint.end ? '已結束' : '顯示中';
   return <section className="glass content-sheet animate-fade-in hint-manager">
     <div className="sheet-title-row">
-      <h2 className="sheet-title">公告 &amp; 維護</h2>
+      <h2 className="sheet-title">公告</h2>
+      <div className="hint-header-actions">
+      <button type="button" className="btn-secondary" data-syslog="hint.collapse" aria-expanded={!collapsed} aria-controls="hint-editor" onClick={() => setCollapsed(value => !value)}>{collapsed ? '展開' : '收合'}</button>
       <button className="btn-secondary" data-syslog="hint.refresh" disabled={busy || !!pending} onClick={() => void load()}>重新整理</button>
+      </div>
     </div>
     <p className="hint-status" role="status">{status}</p>
-    <p className="hint-guidance">{saved.enabled ? '啟用中，儲存後會更新雙端公告。' : '儲存保留內容，啟用後才會依公告時間顯示。'}{dirty && ' 內容尚未儲存。'}</p>
+    {collapsed && <p className="hint-guidance">{saved.hint?.title || '尚無公告標題'}{dirty && '（內容尚未儲存）'}</p>}
     {message && <p className="hint-feedback" role="status">{message}</p>}
     {pending && <button className="btn-secondary" data-syslog="hint.retry" disabled={busy} onClick={() => void send(pending)}>重試原操作</button>}
-    <form onSubmit={event => { event.preventDefault(); save(); }}>
+    <form id="hint-editor" hidden={collapsed} onSubmit={event => { event.preventDefault(); save(); }}>
+      <p className="hint-guidance">{saved.enabled ? '啟用中，儲存後會更新雙端公告。' : '儲存保留內容，啟用後才會依公告時間顯示。'}{dirty && ' 內容尚未儲存。'}</p>
       <fieldset disabled={disabled}>
         <div className="hint-times">
           <label>公告開始時間<input type="datetime-local" step="60" value={start} required onChange={e => setStart(e.target.value)} /></label>

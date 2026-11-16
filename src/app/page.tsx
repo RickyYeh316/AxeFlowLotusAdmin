@@ -31,6 +31,7 @@ import OrderManager from '../components/OrderManager';
 import MarketingManager from '../components/MarketingManager';
 import CouponSettlementManager from '../components/CouponSettlementManager';
 import HintAreaManager from '../components/HintAreaManager';
+import MaintenanceManager from '../components/MaintenanceManager';
 import AdminManager from '../components/AdminManager';
 
 interface AdminUser {
@@ -194,7 +195,7 @@ export default function Home() {
       case 'admins':
         return <AdminManager currentAdminEmail={adminUser.email} />;
       case 'hintArea':
-        return <HintAreaManager />;
+        return <><HintAreaManager /><MaintenanceManager /></>;
       default:
         return <Overview onNavigate={handleNavigate} />;
     }

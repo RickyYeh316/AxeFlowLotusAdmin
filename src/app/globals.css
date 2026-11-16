@@ -1,13 +1,27 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 
-.hint-manager { max-width: 960px; }
+.hint-manager { width: 100%; }
+.hint-manager .sheet-title-row, .maintenance-manager .sheet-title-row { flex-wrap: wrap; gap: 16px; }
+.maintenance-manager { min-width: 0; }
+.maintenance-times label { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; min-width: 0; }
+.maintenance-times input { width: 100%; min-width: 0; color: var(--text-primary); background: var(--bg-input, #171923); border: 1px solid var(--border-color, #303340); border-radius: 8px; padding: 12px; font: inherit; color-scheme: dark; }
+.maintenance-status { color: var(--text-secondary); font-size: 0.85rem; }
+.maintenance-stale { color: #fcd34d; margin: 16px 0; }
+.maintenance-result { margin-top: 24px; overflow-wrap: anywhere; }
+.maintenance-result > p { margin: 12px 0; color: var(--text-secondary); font-size: 0.85rem; }
+.maintenance-table th:nth-child(1) { width: 16%; }
+.maintenance-table th:nth-child(2) { width: 23%; }
+.maintenance-table th:nth-child(3) { width: 23%; }
+.maintenance-table th:nth-child(4), .maintenance-table th:nth-child(5) { width: 19%; }
+.maintenance-empty { padding: 32px 0; text-align: center; }
 .hint-manager fieldset { border: 0; padding: 0; margin: 20px 0; min-width: 0; }
 .hint-manager label { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
 .hint-manager input, .hint-manager textarea { width: 100%; min-width: 0; color: var(--text-primary); background: var(--bg-input, #171923); border: 1px solid var(--border-color, #303340); border-radius: 8px; padding: 12px; font: inherit; color-scheme: dark; }
 .hint-manager textarea { resize: vertical; }
 .hint-times { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.hint-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.hint-actions, .hint-header-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.maintenance-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
 .hint-status, .hint-feedback, .hint-guidance { margin: 16px 0; overflow-wrap: anywhere; }
 .hint-preview { margin: auto; width: min(90vw, 560px); max-height: 80dvh; overflow: auto; padding: 24px; border: 1px solid #42536b; border-radius: 12px; background: #171f2b; color: #e5eaf1; }
 .hint-preview::backdrop { background: #0009; }
