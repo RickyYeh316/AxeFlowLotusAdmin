@@ -339,7 +339,7 @@ export default function DriverManager() {
       case DriverTripStatus.IDLE: return '上線空車';
       case DriverTripStatus.IN_QUEUE: return '排班中';
       case DriverTripStatus.DISPATCHED: return '媒合中';
-      case DriverTripStatus.EN_ROUTE: return '前往接客';
+      case DriverTripStatus.EN_ROUTE: return '前往上車地點';
       case DriverTripStatus.ARRIVED: return '抵達乘客點';
       case DriverTripStatus.IN_SERVICE: return '載客中';
       default: return '已下線';
@@ -735,7 +735,7 @@ export default function DriverManager() {
                     <option value={DriverTripStatus.IDLE} style={{ background: '#0c0d14' }}>上線空車 (IDLE)</option>
                     <option value={DriverTripStatus.IN_QUEUE} style={{ background: '#0c0d14' }}>排班中 (IN_QUEUE)</option>
                     <option value={DriverTripStatus.DISPATCHED} style={{ background: '#0c0d14' }}>媒合中 (DISPATCHED)</option>
-                    <option value={DriverTripStatus.EN_ROUTE} style={{ background: '#0c0d14' }}>接送前往 (EN_ROUTE)</option>
+                    <option value={DriverTripStatus.EN_ROUTE} style={{ background: '#0c0d14' }}>前往上車地點 (EN_ROUTE)</option>
                     <option value={DriverTripStatus.ARRIVED} style={{ background: '#0c0d14' }}>抵達點 (ARRIVED)</option>
                     <option value={DriverTripStatus.IN_SERVICE} style={{ background: '#0c0d14' }}>載客中 (IN_SERVICE)</option>
                   </select>

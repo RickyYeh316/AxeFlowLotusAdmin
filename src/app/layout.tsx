@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "../../public/passenger-order/shared/order-map.css";
+import "./queue.css";
 import {CommonToastProvider} from "../components/CommonToast";
 
 export const metadata: Metadata = {

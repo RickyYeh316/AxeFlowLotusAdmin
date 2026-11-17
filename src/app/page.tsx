@@ -26,6 +26,7 @@ import Login from '../components/Login';
 import Overview from '../components/Overview';
 import DispatchMap from '../components/DispatchMap';
 import DriverManager from '../components/DriverManager';
+import QueueAreaManager from '../components/QueueAreaManager';
 import UserManager from '../components/UserManager';
 import OrderManager from '../components/OrderManager';
 import MarketingManager from '../components/MarketingManager';
@@ -133,6 +134,7 @@ export default function Home() {
       case 'overview': return <LayoutDashboard size={12} />;
       case 'dispatch': return <Compass size={12} />;
       case 'drivers': return <Car size={12} />;
+      case 'queueAreas': return <MapPin size={12} />;
       case 'users': return <Users size={12} />;
       case 'orders': return <ClipboardList size={12} />;
       case 'marketing': return <Tag size={12} />;
@@ -148,6 +150,7 @@ export default function Home() {
       case 'overview': return '儀表板總覽';
       case 'dispatch': return '派車現況';
       case 'drivers': return '司機管理';
+      case 'queueAreas': return '排班區管理';
       case 'users': return '乘客管理';
       case 'orders': return '訂單管理';
       case 'marketing': return '優惠券管理';
@@ -182,6 +185,7 @@ export default function Home() {
         return <Overview onNavigate={handleNavigate} />;
       case 'dispatch':
         return <DispatchMap apiKey={mapsApiKey} />;
+      case 'queueAreas': return <QueueAreaManager />;
       case 'drivers':
         return <DriverManager />;
       case 'users':
@@ -247,6 +251,9 @@ export default function Home() {
             {!sidebarCollapsed && <span>司機管理</span>}
           </button>
           
+          <button onClick={() => handleNavigate('queueAreas')} className={`menu-item ${activeTab === 'queueAreas' ? 'active' : ''}`} title="排班區管理">
+            <MapPin size={18} />{!sidebarCollapsed && <span>排班區管理</span>}
+          </button>
           <button 
             onClick={() => handleNavigate('users')}
             className={`menu-item ${activeTab === 'users' ? 'active' : ''}`}

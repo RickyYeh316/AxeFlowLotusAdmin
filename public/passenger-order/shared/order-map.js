@@ -65,14 +65,15 @@ window.LotusOrderMap = (() => {
     return paths.flat().filter(p => valid(p) && Number.isFinite(p.time))
       .reduce((latest, point) => !latest || point.time > latest.time ? point : latest, null);
   }
-  function create(read) {
+  function create(read, options = {}) {
+    const areaMode = options.area === true;
     const entries = new Map(); let generation = 0, dialogRun = 0, dialogEntry = null, dialogSurface = null;
-    const dialog = document.createElement('dialog'); dialog.className = 'order-map-dialog';
+    const dialog = document.createElement('dialog'); dialog.className = 'order-map-dialog' + (areaMode ? ' queue-map-dialog' : '');
     // 初始焦點放在標題，避免 showModal 自動選中第一顆返回按鈕。
     dialog.innerHTML = '<header><button type="button" data-close data-syslog="map.back">返回</button><h2 tabindex="-1" autofocus>行程地圖</h2><button type="button" data-fit data-syslog="map.fit">全貌</button></header><div class="order-map-status" role="status"></div><div class="order-map-full"></div>';
     document.body.append(dialog);
     const full = dialog.querySelector('.order-map-full'), note = dialog.querySelector('[role=status]');
-    function close() { if(dialogEntry)window.LotusClientLog?.record('SUBPAGE_STATE',{subpage:'order_map',orderId:dialogEntry.id,visible:false}); dialogRun++; dialogEntry = null; dialogSurface?.dispose(); dialogSurface = null; full.replaceChildren(); if (dialog.open) dialog.close(); }
+    function close() { if(dialogEntry)window.LotusClientLog?.record('SUBPAGE_STATE',{subpage:'order_map',...(areaMode ? {areaId:dialogEntry.id} : {orderId:dialogEntry.id}),visible:false}); dialogRun++; dialogEntry = null; dialogSurface?.dispose(); dialogSurface = null; full.replaceChildren(); if (dialog.open) dialog.close(); }
     dialog.querySelector('[data-close]').onclick = close;
     dialog.addEventListener('cancel', e => { e.preventDefault(); close(); });
     dialog.querySelector('[data-fit]').onclick = () => dialogSurface?.fit();
@@ -81,7 +82,7 @@ window.LotusOrderMap = (() => {
     });
     async function surface(container, interactive, entry) {
       const run = generation;
-      const [{ Map, Polyline }, { Marker }, { Point, Size }] = await Promise.all([google.maps.importLibrary('maps'), google.maps.importLibrary('marker'), google.maps.importLibrary('core')]);
+      const [{ Map, Polyline, Polygon }, { Marker }, { Point, Size }] = await Promise.all([google.maps.importLibrary('maps'), google.maps.importLibrary('marker'), google.maps.importLibrary('core')]);
       if (run !== generation || entries.get(entry.id) !== entry) return null;
       const canvas = document.createElement('div'); canvas.className = 'order-map-canvas'; container.prepend(canvas);
       const map = new Map(canvas, { center: {lat:23.8,lng:121}, zoom:10, maxZoom:18, isFractionalZoomEnabled:interactive, disableDefaultUI:true,
@@ -94,6 +95,20 @@ window.LotusOrderMap = (() => {
         fitted = true;
       }
       function draw() {
+        if (areaMode) {
+          const polygons = [entry.data.polygon || [], entry.data.pickupPolygon || []];
+          points = polygons.flat().filter(valid);
+          const next = JSON.stringify(polygons);
+          if (signature !== next) {
+            lines.splice(0).forEach(line => line.setMap(null));
+            polygons.forEach((paths,i) => lines.push(new Polygon({map,paths,clickable:false,
+              strokeColor:i ? '#e87916' : '#1976d2', strokeWeight:2, strokeOpacity:1,
+              fillColor:i ? '#e87916' : '#1976d2', fillOpacity:(i ? 64 : 48)/255,zIndex:i+1})));
+            signature = next; fitted = false;
+          }
+          if (!fitted) fit();
+          return;
+        }
         const data = entry.data, approach = ['ACCEPTED','ARRIVED'].includes(data.status), track = ['IN_PROGRESS','COMPLETED'].includes(data.status);
         const nextMode = approach ? 'A' : track ? 'B' : ''; if (mode !== nextMode) { fitted = false; mode = nextMode; }
         const paths = track ? segments(entry.batches) : [];
@@ -122,7 +137,7 @@ window.LotusOrderMap = (() => {
     const MapStore = Map;
     function show(entry) {
       entry.surface?.draw(); entry.label.textContent = entry.error || (entry.surface ? '展開地圖' : '載入地圖…');
-      if (dialogEntry === entry) { dialogSurface?.draw(); note.textContent = entry.error || ''; dialog.querySelector('h2').textContent = ['ACCEPTED','ARRIVED'].includes(entry.data.status) ? '司機位置' : '行程軌跡'; }
+      if (dialogEntry === entry) { dialogSurface?.draw(); note.textContent = entry.error || (areaMode ? '藍色：司機排班區　橘色：乘客上車區' : ''); dialog.querySelector('h2').textContent = areaMode ? entry.data.name : ['ACCEPTED','ARRIVED'].includes(entry.data.status) ? '司機位置' : '行程軌跡'; }
     }
     async function activate(entry) {
       if (document.hidden || entry !== dialogEntry && (!entry.root.isConnected || entry.root.closest('[hidden]'))) return;
@@ -132,7 +147,7 @@ window.LotusOrderMap = (() => {
         catch { entry.error = '地圖暫時無法載入，點擊重試'; show(entry); }
         finally { entry.loadingMap = false; }
       }
-      refresh(entry);
+      if (!areaMode) refresh(entry);
     }
     async function refresh(entry) {
       if (entry.busy || document.hidden || !entry.live && entry.loaded || Date.now() < entry.nextRead) return;
@@ -151,26 +166,26 @@ window.LotusOrderMap = (() => {
       finally { entry.busy = false; entry.nextRead = revision === entry.revision ? Date.now()+5000 : 0; }
     }
     async function open(entry) {
-      close(); const run = dialogRun; dialogEntry = entry; dialog.showModal(); window.LotusClientLog?.record('SUBPAGE_STATE',{subpage:'order_map',orderId:entry.id,visible:true}); note.textContent = '載入地圖…';
-      try { const s = await surface(full,true,entry); if (dialogEntry !== entry || run !== dialogRun) { s?.dispose(); return; } dialogSurface = s; show(entry); refresh(entry); }
+      close(); const run = dialogRun; dialogEntry = entry; dialog.showModal(); window.LotusClientLog?.record('SUBPAGE_STATE',{subpage:'order_map',...(areaMode ? {areaId:entry.id} : {orderId:entry.id}),visible:true}); note.textContent = '載入地圖…';
+      try { const s = await surface(full,true,entry); if (dialogEntry !== entry || run !== dialogRun) { s?.dispose(); return; } dialogSurface = s; show(entry); if (!areaMode) refresh(entry); }
       catch { note.textContent = '地圖暫時無法載入，請返回後重試'; }
     }
     function preview(item) {
-      const id = item.orderId || item.id;
+      const id = areaMode ? item.areaId : item.orderId || item.id;
       let entry = entries.get(id);
       if (!entry) {
-        const root = document.createElement('div'); root.className = 'order-map-preview'; root.dataset.orderMap = id; root.dataset.syslog='map.expand'; root.dataset.logOrder=id;
-        root.tabIndex = 0; root.setAttribute('role','button'); root.setAttribute('aria-label','展開行程地圖');
+        const root = document.createElement('div'); root.className = 'order-map-preview'; root.dataset.orderMap = id; root.dataset.syslog=areaMode?'queue.map_expand':'map.expand'; if(areaMode)root.dataset.logArea=id;else root.dataset.logOrder=id;
+        root.tabIndex = 0; root.setAttribute('role','button'); root.setAttribute('aria-label',areaMode ? '展開排班區地圖' : '展開行程地圖');
         const label = document.createElement('span'); label.className = 'order-map-label'; label.textContent='載入地圖…'; root.append(label);
         entry = {id,root,label,data:{},batches:new Map(),cursor:null,live:true,nextRead:0,revision:0}; entries.set(id,entry);
         root.onclick = () => open(entry); root.onkeydown = e => { if (['Enter',' '].includes(e.key)) {e.preventDefault();open(entry);} }; observer.observe(root);
       }
       const status = item.orderStatus;
       if (entry.data.status && entry.data.status !== status) { entry.revision++; entry.cursor=null; entry.batches.clear(); entry.loaded=false; entry.live=true; entry.nextRead=0; }
-      entry.data = {...entry.data,status,pickup:item.display?.pickupLocation,destination:item.display?.destination,driver:item.driverLocation};
+      entry.data = areaMode ? item : {...entry.data,status,pickup:item.display?.pickupLocation,destination:item.display?.destination,driver:item.driverLocation};
       show(entry); return entry.root;
     }
-    setInterval(() => {
+    const timer = setInterval(() => {
       for (const entry of entries.values()) {
         if (!entry.root.isConnected && entry !== dialogEntry) {
           entry.detachedAt ||= Date.now();
@@ -183,9 +198,10 @@ window.LotusOrderMap = (() => {
         if (entry === dialogEntry || entry.visible && !entry.root.closest('[hidden]')) activate(entry);
       }
     }, 1000);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) for (const entry of entries.values()) if (entry.visible) activate(entry); });
+    const onVisible = () => { if (!document.hidden) for (const entry of entries.values()) if (entry.visible) activate(entry); };
+    document.addEventListener('visibilitychange', onVisible);
     function reset() { generation++; close(); observer.disconnect(); entries.forEach(e => e.surface?.dispose()); entries.clear(); }
-    return {preview,reset};
+    return {preview,reset,destroy() {reset();clearInterval(timer);document.removeEventListener("visibilitychange",onVisible);dialog.remove();}};
   }
   return {create,segments,fitCamera,containsCamera};
 })();

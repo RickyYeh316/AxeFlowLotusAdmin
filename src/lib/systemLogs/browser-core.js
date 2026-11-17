@@ -1,6 +1,6 @@
 /* Formal system logs. Canonical browser core; AH vendors this file byte-for-byte. */
 (function(root) {
-  const fields = new Set('orderId readableId operationId attemptId eventId offerEventId noticeId action orderAction queueAction screen control status orderStatus tripStatus code httpStatus durationMs enabled loading cached online visible count dropped duplicate endpoint reason authenticated reservationState gpsStatus presenceStatus windowStart windowEnd minDurationMs maxDurationMs errorKind quotaUsed quotaLimit pendingCount layer listenerId initial changeType oldestPendingAt flushReason retryAt failureCount stage sampleCount sampleFrom sampleTo subpage clientVersion'.split(' '));
+  const fields = new Set('areaId entryId expectedEntryId expectedTripStatus expectedOrderId driverId orderId readableId operationId attemptId eventId offerEventId noticeId action orderAction queueAction screen control status orderStatus tripStatus code httpStatus durationMs enabled loading cached online visible count dropped duplicate endpoint reason authenticated reservationState gpsStatus presenceStatus windowStart windowEnd minDurationMs maxDurationMs errorKind quotaUsed quotaLimit pendingCount layer listenerId initial changeType oldestPendingAt flushReason retryAt failureCount stage sampleCount sampleFrom sampleTo subpage clientVersion'.split(' '));
   const safe = value => typeof value === 'string' && /^[A-Za-z0-9_:.@+-]{1,128}$/.test(value);
   function clean(input = {}) { return Object.fromEntries(Object.entries(input || {}).filter(([k,v]) => fields.has(k) && (safe(v) || typeof v === 'boolean' || typeof v === 'number' && Number.isFinite(v) && Math.abs(v)<=Number.MAX_SAFE_INTEGER)).slice(0,23)); }
   // Only allowlisted background reads are summarized. Transactions retain every attempt.
@@ -148,7 +148,7 @@
     const click=e=>{const target=e.target?.closest?.('button,[role=button],a,input[type=submit]');if(!target)return;
       const card=target.closest('[data-log-order]');
       const control=target.dataset.syslog || target.dataset.roleAction || (/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(target.id)?target.id:'unmapped.'+target.tagName.toLowerCase());
-      record('UI_CLICK',{control,action:target.dataset.roleAction,orderId:card?.dataset.logOrder,eventId:card?.dataset.logEvent,enabled:!target.disabled,reason:control.startsWith('unmapped.')?'MISSING_CONTROL_ID':undefined,screen:options.screen?.()||'unknown'});};
+      record('UI_CLICK',{control,action:target.dataset.roleAction,areaId:target.dataset.logArea,orderId:card?.dataset.logOrder,eventId:card?.dataset.logEvent,enabled:!target.disabled,reason:control.startsWith('unmapped.')?'MISSING_CONTROL_ID':undefined,screen:options.screen?.()||'unknown'});};
     const runtime=()=>record('RUNTIME_ERROR',{code:'UNCAUGHT'},true);
     root.addEventListener?.('online',onOnline);root.addEventListener?.('offline',onOffline);root.addEventListener?.('pagehide',visibility);
     root.addEventListener?.('error',runtime);root.addEventListener?.('unhandledrejection',runtime);

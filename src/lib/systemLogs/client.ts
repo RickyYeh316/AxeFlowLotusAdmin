@@ -10,7 +10,7 @@ let screen='admin';
 let stopAuth:(()=>void)|undefined;
 export function startSystemLog() {
   if(typeof window==='undefined'||logger)return;
-  try { logger=window.LotusSystemLog?.create({source:'webAdmin',version:'syslog-hint-audience-20261116',batchSize:100,intervalMs:60000,
+  try { logger=window.LotusSystemLog?.create({source:'webAdmin',version:'syslog-queue-admin-20261117',batchSize:100,intervalMs:60000,
     endpoint:'https://asia-east1-axeflowlotus-6dc3b.cloudfunctions.net/uploadSystemLogs',screen:()=>screen});
   stopAuth=onAuthStateChanged(auth,user=>logger?.bind(user?.uid||'',user?()=>user.getIdToken():null));
   } catch { /* Storage/diagnostics failure leaves the product usable. */ }

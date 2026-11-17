@@ -1,5 +1,11 @@
 # LotusAH — Web 管理介面
 
+## 11/17 排班區管理
+
+已獲GO並完成第一版：導覽位於司機管理下方；一區一卡、名稱個別保存、上下箭頭整批排序、獨立啟停、候車及承接中保號名單、joinedAt領號時間、三情境移除確認。設定與移除走可信webAdmin，原請求以本人sessionStorage保存及重試；登出／晚回應隔離。QueueAreaMap沿canonical order-map area模式，藍橘polygon與AOS共同取景／theme，不畫司機點。共用資產同步同時補齊原已存在的乘客公告CSS鏡像，沒有修改乘客公告行為。
+
+正式build、定向lint及隔離Chrome桌面／390px回歸通過（含命名、啟停、排序、地圖、失去回應後reload重試、過期確認、登出）；Maps使用fixture，Ready截圖已見正式底圖與區界，Ready 已回報本批排班區管理 TEST PASS。排班卡左側為地圖與圖例，右側上方承接中保號、下方候車順位；白字說明「已承接訂單，乘客上車前保留回排資格。」0人亦顯示，窄版依地圖／保號／候車堆疊。11/17追加修正排班確認及地圖視窗置中，1440／390px位置斷言與截圖回歸通過。已發布build-2026-11-17-002，READY／SUCCEEDED／100%，57份來源及9個線上資產回讀通過；完整發布證據及Human Review Map見root當日日誌／排班區管理規劃。Git唯讀。
+
 ## 公告分端、commonToast 與維護簡化（11/16）
 
 HintAreaManager 可切換乘客端／司機端，兩份公告各有內容、時間、啟用及 revision；各自保留未存編輯與 sessionStorage 原請求。每端「儲存／預覽／啟用／停用」維持原契約；儲存不切換狀態、停用保留內容與時間，成功回饋改 Toast。
