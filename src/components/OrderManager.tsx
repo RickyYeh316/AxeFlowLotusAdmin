@@ -398,7 +398,13 @@ export default function OrderManager() {
                   <button data-syslog="order.sort.passengerName" onClick={() => requestSort('passengerName')}>乘客姓名{getSortIcon('passengerName')}</button>
                   <span>/</span>
                   <button data-syslog="order.sort.passengerNumber" onClick={() => requestSort('passengerNumber')}>編號{getSortIcon('passengerNumber')}</button>
-                </div><button className="coupon-sort" onClick={() => requestSort('driverName')}>車號司機 {getSortIcon('driverName')}</button></th>
+                </div>
+                  <div className="passenger-heading">
+                    <button data-syslog="order.sort.carPlate" onClick={() => requestSort('carPlate')}>車號{getSortIcon('carPlate')}</button>
+                    <span>/</span>
+                    <button data-syslog="order.sort.driverName" onClick={() => requestSort('driverName')}>司機{getSortIcon('driverName')}</button>
+                  </div>
+                </th>
                 <th><button className="coupon-sort" onClick={() => requestSort('startAddress')}>上車地 {getSortIcon('startAddress')}</button><br /><button className="coupon-sort" data-syslog="order.sort.destination" onClick={() => requestSort('endAddress')}>目的地 {getSortIcon('endAddress')}</button></th>
                 <th><button className="coupon-sort" onClick={() => requestSort('updatedAt')}>紀錄時間 {getSortIcon('updatedAt')}</button></th>
                 <th>操作</th>

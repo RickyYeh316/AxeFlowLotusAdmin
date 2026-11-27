@@ -17,7 +17,7 @@ export function onAuthStateChanged(_auth, callback) { listeners.add(callback); q
 window.changeUser = uid => { auth.currentUser = uid ? { uid, getIdToken: async () => 'fixture-token' } : null; listeners.forEach(fn => fn(auth.currentUser)); };
 `);
 const loader = write('loader.cjs', `const ts=require(${JSON.stringify(require.resolve('typescript'))});module.exports=function(source){return ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true},fileName:this.resourcePath}).outputText}`);
-const entry = write('entry.js', `import {startSystemLog,logScreen} from ${JSON.stringify(path.join(root,'src/lib/systemLogs/client.ts'))}; import React from 'react'; import {createRoot} from 'react-dom/client'; import Manager from ${JSON.stringify(path.join(root,'src/components/UserManager.tsx'))}; import Orders from ${JSON.stringify(path.join(root,'src/components/OrderManager.tsx'))}; const view=createRoot(document.getElementById('root')); const createLog=window.LotusSystemLog.create; window.LotusSystemLog.create=o=>createLog({...o,intervalMs:20,uploadIntervalMs:0,minUploadMs:0,priorityDelayMs:0});startSystemLog();window.showView=which=>{logScreen(which);view.render(React.createElement(which==='orders'?Orders:Manager))}; window.showView('users');`);
+const entry = write('entry.js', `import {startSystemLog,logScreen} from ${JSON.stringify(path.join(root,'src/lib/systemLogs/client.ts'))}; import React from 'react'; import {createRoot} from 'react-dom/client'; import Manager from ${JSON.stringify(path.join(root,'src/components/UserManager.tsx'))}; import Orders from ${JSON.stringify(path.join(root,'src/components/OrderManager.tsx'))}; import Drivers from ${JSON.stringify(path.join(root,'src/components/DriverManager.tsx'))}; const view=createRoot(document.getElementById('root')); const createLog=window.LotusSystemLog.create; window.LotusSystemLog.create=o=>createLog({...o,intervalMs:20,uploadIntervalMs:0,minUploadMs:0,priorityDelayMs:0});startSystemLog();window.showView=which=>{logScreen(which);view.render(React.createElement(which==='orders'?Orders:which==='drivers'?Drivers:Manager))}; window.showView('users');`);
 const store = write('firestore.js', `
 export const collection=(_db,name)=>({name});
 window.orderListeners=new Map();window.orderReadFailures=new Set();
@@ -618,6 +618,35 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     await wait(`!document.querySelector('iframe')`);
     assert.equal(await run(`adminReads.every(p=>['ORDER_DETAIL','ORDER_MAP','ORDER_CHAT','ORDER_CHAT_SEGMENT','ORDER_CHAT_MESSAGES'].includes(p.action))`),true);
     console.log('PASS: v3 snapshot card, disabled rebook, map segments, 2 chat segments/earlier pages/XSS, read-only, back/close/page preservation, 390px, permission failure/retry and late response identity isolation.');
+    await run(`fixture.drivers = [
+      {id:'d',data:{name:'A',carColor:''}},
+      {id:'c',data:{name:'B',carPlate:'ZZZ',plateNumber:'OLD',avatar:'/fixture-avatar.svg',carColor:'黃',carMaker:'TOYOTA',carModel:'RAV4'}},
+      {id:'b',data:{name:'C',carPlate:'AAA',avatar:'/missing-avatar.png',carColor:'水泥灰'}},
+      {id:'a',data:{name:'D',plateNumber:'BBB',avatar:'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',carColor:'銀色'}}
+    ];showView('drivers')`);
+    await wait(`document.querySelectorAll('tbody tr').length===4 && document.querySelectorAll('tbody img[src="/passenger-avatar-default.svg"]').length===3`);
+    assert.deepEqual(await run(`[...document.querySelectorAll('tbody td:nth-child(3)')].map(td=>td.textContent)`),
+      ['', 'TOYOTA RAV4', '', '']);
+    assert.equal(await run(`document.querySelector('tbody .order-plate')?.textContent`),'ZZZ');
+    assert.equal(await run(`document.querySelectorAll('tbody .order-plate').length`),3);
+    for (const [label,first] of [['帳號','a'],['帳號','d'],['車牌','d'],['車牌','c'],['司機','d'],['司機','a']]) {
+      await run(`[...document.querySelectorAll('thead button')].find(b=>b.textContent==='${label}').click()`);
+      await wait(`document.querySelector('tbody .passenger-identity img + div > div')?.textContent==='${first}'`);
+    }
+    await fill('input[placeholder^="搜尋司機"]','ZZZ');
+    await wait(`document.querySelectorAll('tbody tr').length===1 && document.querySelector('.order-plate')?.textContent==='ZZZ'`);
+    await run(`document.querySelector('button[title="編輯"]').click()`);
+    await wait(`document.querySelector('input[placeholder="ABC-1234"]')?.value==='ZZZ'`);
+    await run(`fixture.orders=fixture.orders.slice(0,2);fixture.orders.forEach((o,i)=>Object.assign(o.data,{
+      status:'ACCEPTED',carPlate:i?'AAA-1000':'ZZZ-9000',driverName:i?'Zed':'Amy'
+    }));showView('orders')`);
+    await wait(`document.querySelectorAll('.order-driver').length===2`);
+    for (const [key,firstPlate] of [['carPlate','AAA-1000'],['carPlate','ZZZ-9000'],['driverName','ZZZ-9000'],['driverName','AAA-1000']]) {
+      await run(`document.querySelector('[data-syslog="order.sort.${key}"]').click()`);
+      await wait(`document.querySelector('.order-plate')?.textContent==='${firstPlate}'`);
+      assert.equal(await run(`document.querySelector('thead .passenger-heading button:has(svg)').dataset.syslog`),'order.sort.'+key);
+    }
+    console.log('PASS: 車號與司機獨立升降排序，司機頭像、帳號／車牌／司機排序與車款顯示。');
     assert.deepEqual(errors,[]);
     console.log('PASS: 訂單v2精簡標籤、時間下方特性、地圖URL／新分頁設定、無效座標隱藏與點擊sysLog；既有搜尋／排序／時區／分頁／預約回歸通過。');
     console.log('sysLog auth/stream upload fixture PASS. Screenshots: '+temp);

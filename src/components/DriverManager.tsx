@@ -3,8 +3,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase/config';
 import { collection, onSnapshot, doc, setDoc, deleteDoc } from '../lib/loggedFirestore';
-import { Search, Plus, Edit2, Trash2, X, Check, AlertTriangle, Star, ChevronUp, ChevronDown } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, X, Check, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react';
 import { Driver, DriverTripStatus, DriverAccountStatus } from '../types';
+
+const defaultAvatar = '/passenger-avatar-default.svg';
+const legacyAvatar = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde';
 
 export default function DriverManager() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -74,17 +77,18 @@ export default function DriverManager() {
           }
         }
 
+        const carPlate = data.carPlate || data.plateNumber || '';
         list.push({
           email: doc.id,
           id: doc.id,
           name: data.name || '',
           phone: data.phone || '',
-          plateNumber: data.plateNumber || data.carPlate || '',
-          carPlate: data.carPlate || data.plateNumber || '',
+          plateNumber: carPlate,
+          carPlate,
           carColor: data.carColor || '',
           carMaker: data.carMaker || '',
           carModel: data.carModel || '',
-          avatar: data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+          avatar: typeof data.avatar === 'string' && data.avatar.split('?')[0] !== legacyAvatar ? data.avatar.trim() : '',
           tripStatus: parsedTripStatus as DriverTripStatus,
           accountStatus: parsedAccountStatus as DriverAccountStatus,
           working: parsedTripStatus === DriverTripStatus.IDLE,
@@ -286,7 +290,6 @@ export default function DriverManager() {
         // New Driver defaults
         driverData.createdAt = new Date();
         driverData.loginCount = 0;
-        driverData.avatar = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80';
         driverData.currentLocation = {
           lat: 25.0412 + (Math.random() - 0.5) * 0.02,
           lng: 121.5645 + (Math.random() - 0.5) * 0.02,
@@ -444,11 +447,18 @@ export default function DriverManager() {
               <table className="admin-table">
                 <thead>
                   <tr>
-                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('name')}>司機姓名 {getSortIcon('name')}</th>
-                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('email')}>電子郵件 {getSortIcon('email')}</th>
-                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('phone')}>聯絡電話 {getSortIcon('phone')}</th>
-                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('plateNumber')}>車牌號碼 {getSortIcon('plateNumber')}</th>
-                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('carMaker')}>車款車色 {getSortIcon('carMaker')}</th>
+                    <th>
+                      <div className="passenger-heading">
+                        <button onClick={() => requestSort('email')}>帳號{getSortIcon('email')}</button>
+                      </div>
+                      <div className="passenger-heading">
+                        <button onClick={() => requestSort('carPlate')}>車牌{getSortIcon('carPlate')}</button>
+                        <span>/</span>
+                        <button onClick={() => requestSort('name')}>司機{getSortIcon('name')}</button>
+                      </div>
+                    </th>
+                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('phone')}>手機 {getSortIcon('phone')}</th>
+                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('carMaker')}>車款 {getSortIcon('carMaker')}</th>
                     <th style={{ cursor: 'pointer' }} onClick={() => requestSort('accountStatus')}>帳號狀態 {getSortIcon('accountStatus')}</th>
                     <th style={{ cursor: 'pointer' }} onClick={() => requestSort('tripStatus')}>工作行程 {getSortIcon('tripStatus')}</th>
                     <th>操作</th>
@@ -458,28 +468,23 @@ export default function DriverManager() {
               {paginatedDrivers.map((driver) => (
                 <tr key={driver.email}>
                   <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <img src={driver.avatar} alt={driver.name} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-color)' }} />
+                    <div className="passenger-identity">
+                      <img src={driver.avatar || defaultAvatar} alt="" onError={event => {
+                        const image = event.currentTarget;
+                        if (image.getAttribute('src') !== defaultAvatar) image.src = defaultAvatar;
+                      }} />
                       <div>
-                        <div style={{ fontWeight: 700 }}>{driver.name}</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                          <Star size={10} fill="var(--color-accent)" stroke="var(--color-accent)" />
-                          <span>4.9 (滿意)</span>
+                        <div>{driver.email}</div>
+                        <div className="order-driver">
+                          {driver.carPlate && <span className="order-plate">{driver.carPlate}</span>}
+                          {driver.name && <span>{driver.name}</span>}
                         </div>
                       </div>
                     </div>
                   </td>
-                  <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                    {driver.email}
-                  </td>
                   <td>{driver.phone}</td>
-                  <td>
-                    <span style={{ fontFamily: 'monospace', fontWeight: 700, background: 'rgba(255,255,255,0.05)', padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border-color)' }}>
-                      {driver.plateNumber}
-                    </span>
-                  </td>
                   <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                    {driver.carColor}色 {driver.carMaker} {driver.carModel}
+                    {[driver.carMaker, driver.carModel].filter(Boolean).join(' ')}
                   </td>
                   <td>
                     <span className={getDriverAccountStatusClass(driver)}>
