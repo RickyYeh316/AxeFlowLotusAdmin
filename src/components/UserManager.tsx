@@ -358,7 +358,7 @@ export default function UserManager() {
                   <span>/</span>
                   <button data-syslog="users.sort.number" onClick={() => requestSort('passengerNumber')}>編號{getSortIcon('passengerNumber')}</button>
                 </div></th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('accountStatus')}>帳號權限 {getSortIcon('accountStatus')}</th>
+                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('accountStatus')}>帳號狀態 {getSortIcon('accountStatus')}</th>
                 <th><button className="coupon-sort" data-syslog="users.sort.currentOrder" onClick={() => requestSort('currentOrder')}>當前訂單 {getSortIcon('currentOrder')}</button></th>
                 <th className="passenger-count">完成搭乘</th>
                 <th className="passenger-count">棄單</th>

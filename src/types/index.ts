@@ -31,6 +31,7 @@ export enum DriverAccountStatus {
   PENDING = "PENDING",     // 新司機，等待開通
   ACTIVE = "ACTIVE",       // 帳號正常開通
   SUSPENDED = "SUSPENDED", // 帳號停權
+  ARCHIVED = "ARCHIVED", // 司機可恢復封存
 }
 
 export enum UserTripStatus {

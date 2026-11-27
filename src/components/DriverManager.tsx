@@ -1,18 +1,35 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { adminApi, AdminApiError } from '../lib/adminApi';
 import { db } from '../firebase/config';
-import { collection, onSnapshot, doc, setDoc, deleteDoc } from '../lib/loggedFirestore';
-import { Search, Plus, Edit2, Trash2, X, Check, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react';
+import { collection, onSnapshot, doc, updateDoc } from '../lib/loggedFirestore';
+import { Search, RefreshCw, X, Check, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react';
 import { Driver, DriverTripStatus, DriverAccountStatus } from '../types';
 
 const defaultAvatar = '/passenger-avatar-default.svg';
 const legacyAvatar = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde';
 
+const categories = [
+  [DriverAccountStatus.ACTIVE, '啟用', 'serving'],
+  [DriverAccountStatus.SUSPENDED, '停用', 'waiting'],
+  [DriverAccountStatus.ARCHIVED, '封存', 'closed'],
+  ['ALL', '全部', 'all']
+] as const;
+
+function accountCategory(status: DriverAccountStatus) {
+  return status === DriverAccountStatus.PENDING ? DriverAccountStatus.SUSPENDED : status;
+}
+
 export default function DriverManager() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [loading, setLoading] = useState(true);
   
+  const [reloadKey, setReloadKey] = useState(0);
+  const [listError, setListError] = useState('');
+  const [statusBusy, setStatusBusy] = useState(false);
+  const submittingStatus = useRef(false);
+
   // Sorting State
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'ascending' | 'descending' } | null>({
     key: 'name',
@@ -24,24 +41,18 @@ export default function DriverManager() {
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Modal states
-  const [showModal, setShowModal] = useState(false);
-  const [isEdit, setIsEdit] = useState(false);
+  const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Form states
-  const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [carPlate, setCarPlate] = useState('');
-  const [carColor, setCarColor] = useState('黃');
-  const [carMaker, setCarMaker] = useState('Toyota');
-  const [carModel, setCarModel] = useState('Sienta');
-  const [vehicleType, setVehicleType] = useState('standard');
-  const [tripStatus, setTripStatus] = useState<DriverTripStatus>(DriverTripStatus.OFFLINE);
-  const [accountStatus, setAccountStatus] = useState<DriverAccountStatus>(DriverAccountStatus.ACTIVE);
+  const [carMaker, setCarMaker] = useState('');
+  const [carModel, setCarModel] = useState('');
 
   useEffect(() => {
-    if (showModal) {
+    if (editingDriver) {
       document.body.classList.add('modal-open');
     } else {
       document.body.classList.remove('modal-open');
@@ -49,10 +60,12 @@ export default function DriverManager() {
     return () => {
       document.body.classList.remove('modal-open');
     };
-  }, [showModal]);
+  }, [editingDriver]);
 
   // Listen to Firestore
   useEffect(() => {
+    setLoading(true);
+    setListError('');
     const unsub = onSnapshot(collection(db, 'drivers'), (snapshot) => {
       const list: Driver[] = [];
       snapshot.forEach((doc) => {
@@ -67,7 +80,7 @@ export default function DriverManager() {
 
         // 2. Parsing Account Status with migration fallbacks
         let parsedAccountStatus = data.accountStatus;
-        if (!parsedAccountStatus) {
+        if (parsedAccountStatus == null) {
           if (data.status === 'WAIT_APPROVAL') {
             parsedAccountStatus = DriverAccountStatus.PENDING;
           } else if (data.status === 'SUSPENDED') {
@@ -101,11 +114,13 @@ export default function DriverManager() {
       setLoading(false);
     }, (err) => {
       console.error("Error reading drivers:", err);
+      setDrivers([]);
+      setListError('無法載入司機名冊，請重新整理。');
       setLoading(false);
     });
 
     return () => unsub();
-  }, []);
+  }, [reloadKey]);
 
   // Sorting & Pagination Logic
   const requestSort = (key: string) => {
@@ -143,7 +158,7 @@ export default function DriverManager() {
 
       let matchesAccount = true;
       if (accountFilter !== 'ALL') {
-        matchesAccount = driver.accountStatus === accountFilter;
+        matchesAccount = accountCategory(driver.accountStatus) === accountFilter;
       }
 
       let matchesTrip = true;
@@ -187,6 +202,7 @@ export default function DriverManager() {
   }, [filteredDrivers, sortConfig]);
 
   const totalPages = Math.ceil(sortedDrivers.length / itemsPerPage);
+  useEffect(() => { setCurrentPage(page => Math.min(page, Math.max(1, totalPages))); }, [totalPages]);
   const paginatedDrivers = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
     return sortedDrivers.slice(start, start + itemsPerPage);
@@ -230,109 +246,70 @@ export default function DriverManager() {
     return pages;
   };
 
-  const openAddModal = () => {
-    setIsEdit(false);
-    setEmail('');
-    setName('');
-    setPhone('');
-    setCarPlate('');
-    setCarColor('黃');
-    setCarMaker('Toyota');
-    setCarModel('Sienta');
-    setTripStatus(DriverTripStatus.OFFLINE);
-    setAccountStatus(DriverAccountStatus.PENDING);
-    setError(null);
-    setShowModal(true);
-  };
-
   const openEditModal = (driver: Driver) => {
-    setIsEdit(true);
-    setEmail(driver.email);
+    setEditingDriver(driver);
     setName(driver.name);
     setPhone(driver.phone || '');
     setCarPlate(driver.plateNumber || driver.carPlate || '');
-    setCarColor(driver.carColor || '');
     setCarMaker(driver.carMaker || '');
     setCarModel(driver.carModel || '');
-    setTripStatus(driver.tripStatus);
-    setAccountStatus(driver.accountStatus);
     setError(null);
-    setShowModal(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (!email.trim() || !name.trim() || !phone.trim() || !carPlate.trim()) {
+    if (!editingDriver) return;
+    if (!name.trim() || !phone.trim() || !carPlate.trim()) {
       setError('請填寫所有必要欄位！');
       return;
     }
 
     try {
-      const driverEmail = email.trim().toLowerCase();
-      const driverRef = doc(db, 'drivers', driverEmail);
-
-      const driverData: any = {
-        name: name.trim(),
-        phone: phone.trim(),
-        plateNumber: carPlate.trim().toUpperCase(),
-        carPlate: carPlate.trim().toUpperCase(),
-        carColor: carColor.trim(),
-        carMaker: carMaker.trim(),
-        carModel: carModel.trim(),
-        tripStatus: tripStatus,
-        accountStatus: accountStatus,
-        updatedAt: new Date()
-      };
-
-      if (!isEdit) {
-        // New Driver defaults
-        driverData.createdAt = new Date();
-        driverData.loginCount = 0;
-        driverData.currentLocation = {
-          lat: 25.0412 + (Math.random() - 0.5) * 0.02,
-          lng: 121.5645 + (Math.random() - 0.5) * 0.02,
-          bearing: Math.floor(Math.random() * 360),
-          speed: 0,
-          updatedAt: new Date()
-        };
+      const driverRef = doc(db, 'drivers', editingDriver.email);
+      const plate = carPlate.trim().toUpperCase();
+      const changes: Record<string, string> = {};
+      if (name.trim() !== editingDriver.name) changes.name = name.trim();
+      if (phone.trim() !== (editingDriver.phone || '')) changes.phone = phone.trim();
+      if (plate !== editingDriver.carPlate) {
+        changes.carPlate = plate;
+        changes.plateNumber = plate;
       }
-
-      await setDoc(driverRef, driverData, { merge: true });
-      setShowModal(false);
+      if (carMaker.trim() !== (editingDriver.carMaker || '')) changes.carMaker = carMaker.trim();
+      if (carModel.trim() !== (editingDriver.carModel || '')) changes.carModel = carModel.trim();
+      if (Object.keys(changes).length) {
+        await updateDoc(driverRef, { ...changes, updatedAt: new Date() });
+      }
+      setEditingDriver(null);
     } catch (err: any) {
       console.error("Failed to save driver:", err);
       setError(err.message || '儲存失敗，請重試。');
     }
   };
 
-  const handleDelete = async (driverEmail: string) => {
-    if (window.confirm(`確定要刪除司機 ${driverEmail} 嗎？此動作無法復原。`)) {
-      try {
-        await deleteDoc(doc(db, 'drivers', driverEmail));
-      } catch (err) {
-        console.error("Failed to delete driver:", err);
-        alert('刪除失敗，請檢查權限。');
-      }
+  const changeAccountStatus = async (driver: Driver, target: DriverAccountStatus, label: string) => {
+    if (submittingStatus.current || !window.confirm(`確定要${label}司機 ${driver.email} 嗎？`)) return;
+    submittingStatus.current = true;
+    setStatusBusy(true);
+    try {
+      await adminApi({action: 'SET_DRIVER_STATUS', driverId: driver.email, expectedStatus: driver.accountStatus,
+        accountStatus: target, operationId: crypto.randomUUID()});
+    } catch (err) {
+      if (err instanceof AdminApiError && err.uncertain) window.alert('帳號狀態待確認，請重新整理列表。');
+      else window.alert(err instanceof Error ? err.message : '操作失敗，請重新整理。');
+    } finally {
+      submittingStatus.current = false;
+      setStatusBusy(false);
     }
   };
 
   const getDriverAccountStatusText = (driver: Driver) => {
-    switch (driver.accountStatus) {
-      case DriverAccountStatus.PENDING: return '等待開通';
+    switch (accountCategory(driver.accountStatus)) {
       case DriverAccountStatus.ACTIVE: return '正常啟用';
-      case DriverAccountStatus.SUSPENDED: return '限制停權';
-      default: return '正常啟用';
-    }
-  };
-
-  const getDriverAccountStatusClass = (driver: Driver) => {
-    switch (driver.accountStatus) {
-      case DriverAccountStatus.ACTIVE: return 'status-pill online';
-      case DriverAccountStatus.PENDING: return 'status-pill pending';
-      case DriverAccountStatus.SUSPENDED: return 'status-pill offline';
-      default: return 'status-pill online';
+      case DriverAccountStatus.SUSPENDED: return '已停權';
+      case DriverAccountStatus.ARCHIVED: return '已封存';
+      default: return '未知';
     }
   };
 
@@ -364,14 +341,24 @@ export default function DriverManager() {
     <>
       <div className="glass content-sheet animate-fade-in">
       <div className="sheet-title-row">
-        <h2 className="sheet-title">司機管理 ({drivers.length})</h2>
-        <button onClick={openAddModal} className="btn-primary">
-          <Plus size={16} />
-          註冊新司機
-        </button>
+        <div className="order-title-content">
+          <h2 className="sheet-title">司機管理 ({filteredDrivers.length})</h2>
+          <div className="order-status-toolbar">
+            {categories.map(([value, label, tone]) => (
+              <button key={value} type="button" data-syslog={`drivers.filter.${value}`}
+                aria-pressed={accountFilter === value}
+                className={`category-pill order-filter order-tone-${tone} ${accountFilter === value ? 'active' : ''}`}
+                onClick={() => { setAccountFilter(value); setCurrentPage(1); }}>
+                {label}{!loading && !listError && ` (${value === 'ALL' ? drivers.length : drivers.filter(d => accountCategory(d.accountStatus) === value).length})`}
+              </button>
+            ))}
+            <button type="button" className="btn-secondary" disabled={loading} data-syslog="drivers.reload"
+              onClick={() => setReloadKey(key => key + 1)}><RefreshCw size={14} /> 重新整理</button>
+          </div>
+        </div>
       </div>
 
-      {loading ? (
+      {listError ? <p role="alert">{listError}</p> : loading ? (
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>載入司機名冊中...</div>
       ) : (
         <>
@@ -387,30 +374,6 @@ export default function DriverManager() {
                 placeholder="搜尋司機姓名、電話、車牌..." 
                 className="search-input"
               />
-            </div>
-
-            {/* Account Status Filter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              <span>帳號狀態:</span>
-              <select 
-                value={accountFilter}
-                onChange={(e) => { setAccountFilter(e.target.value); setCurrentPage(1); }}
-                style={{
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 6,
-                  padding: '6px 12px',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.8rem',
-                  outline: 'none',
-                  cursor: 'pointer'
-                }}
-              >
-                <option value="ALL" style={{ background: '#0c0d14' }}>全部帳號狀態</option>
-                <option value="PENDING" style={{ background: '#0c0d14' }}>等待開通 (PENDING)</option>
-                <option value="ACTIVE" style={{ background: '#0c0d14' }}>啟用正常 (ACTIVE)</option>
-                <option value="SUSPENDED" style={{ background: '#0c0d14' }}>限制停權 (SUSPENDED)</option>
-              </select>
             </div>
 
             {/* Trip Status Filter */}
@@ -487,7 +450,7 @@ export default function DriverManager() {
                     {[driver.carMaker, driver.carModel].filter(Boolean).join(' ')}
                   </td>
                   <td>
-                    <span className={getDriverAccountStatusClass(driver)}>
+                    <span className={driver.accountStatus === DriverAccountStatus.ACTIVE ? 'status-pill online' : 'status-pill offline'}>
                       {getDriverAccountStatusText(driver)}
                     </span>
                   </td>
@@ -498,12 +461,17 @@ export default function DriverManager() {
                   </td>
                   <td>
                     <div className="action-btn-row">
-                      <button onClick={() => openEditModal(driver)} className="btn-icon edit" title="編輯">
-                        <Edit2 size={14} />
+                      <button type="button" onClick={() => openEditModal(driver)} className="btn-secondary table-action-button" data-syslog="drivers.edit">
+                        編輯
                       </button>
-                      <button onClick={() => handleDelete(driver.email)} className="btn-icon delete" title="刪除">
-                        <Trash2 size={14} />
-                      </button>
+                      {categories.map(([target, label]) => target !== 'ALL' &&
+                        Object.values(DriverAccountStatus).includes(driver.accountStatus) &&
+                        target !== accountCategory(driver.accountStatus) && (
+                          <button key={target} className="btn-secondary table-action-button" type="button" disabled={statusBusy}
+                            data-syslog={`drivers.status.${target}`} onClick={() => changeAccountStatus(driver, target, label)}>
+                            {label}
+                          </button>
+                        ))}
                     </div>
                   </td>
                 </tr>
@@ -593,13 +561,13 @@ export default function DriverManager() {
 )}
       </div>
 
-      {/* Add/Edit Modal */}
-      {showModal && (
-        <div className="modal-overlay">
+      {/* Edit Modal */}
+      {editingDriver && (
+        <div className="modal-overlay driver-edit-overlay">
           <div className="glass modal-content animate-fade-in" style={{ background: '#0c0d16', border: '1px solid var(--border-color-hover)' }}>
             <div className="modal-header">
-              <h3 className="modal-title">{isEdit ? '編輯司機資訊' : '註冊新司機帳號'}</h3>
-              <button onClick={() => setShowModal(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+              <h3 className="modal-title">編輯司機資訊</h3>
+              <button onClick={() => setEditingDriver(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
                 <X size={18} />
               </button>
             </div>
@@ -613,142 +581,35 @@ export default function DriverManager() {
 
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div className="form-group">
-                <label className="form-label">電子郵件 (帳號唯一 ID / 必填)</label>
-                <input 
-                  type="email" 
-                  value={email} 
-                  onChange={(e) => setEmail(e.target.value)}
-                  disabled={isEdit}
-                  placeholder="driver.name@gmail.com" 
-                  className="form-input"
-                  required
-                />
+                <label htmlFor="driver-account" className="form-label">帳號</label>
+                <input id="driver-account" type="email" value={editingDriver.email} className="form-input" disabled />
               </div>
 
-              <div className="form-row">
-                <div className="form-group">
-                  <label className="form-label">司機姓名 (必填)</label>
-                  <input 
-                    type="text" 
-                    value={name} 
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="姓名" 
-                    className="form-input"
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">聯絡電話 (必填)</label>
-                  <input 
-                    type="text" 
-                    value={phone} 
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="0912-345-678" 
-                    className="form-input"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="form-row">
-                <div className="form-group">
-                  <label className="form-label">車牌號碼 (必填)</label>
-                  <input 
-                    type="text" 
-                    value={carPlate} 
-                    onChange={(e) => setCarPlate(e.target.value)}
-                    placeholder="ABC-1234" 
-                    className="form-input"
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">車輛外觀顏色</label>
-                  <input 
-                    type="text" 
-                    value={carColor} 
-                    onChange={(e) => setCarColor(e.target.value)}
-                    placeholder="黃、黑、白" 
-                    className="form-input"
-                  />
-                </div>
-              </div>
-
-              <div className="form-row">
-                <div className="form-group">
-                  <label className="form-label">汽車廠牌</label>
-                  <input 
-                    type="text" 
-                    value={carMaker} 
-                    onChange={(e) => setCarMaker(e.target.value)}
-                    placeholder="Toyota, Tesla" 
-                    className="form-input"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">汽車車款</label>
-                  <input 
-                    type="text" 
-                    value={carModel} 
-                    onChange={(e) => setCarModel(e.target.value)}
-                    placeholder="Sienta, Model Y" 
-                    className="form-input"
-                  />
-                </div>
-              </div>
-
-              <div className="form-row" style={{ gap: 16 }}>
-                <div className="form-group">
-                  <label className="form-label">帳號狀態</label>
-                  <select 
-                    value={accountStatus} 
-                    onChange={(e) => setAccountStatus(e.target.value as DriverAccountStatus)}
-                    className="form-select"
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: 'var(--radius-sm)',
-                      padding: '8px 12px',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.85rem',
-                      outline: 'none'
-                    }}
-                  >
-                    <option value={DriverAccountStatus.PENDING} style={{ background: '#0c0d14' }}>等待開通 (PENDING)</option>
-                    <option value={DriverAccountStatus.ACTIVE} style={{ background: '#0c0d14' }}>啟用正常 (ACTIVE)</option>
-                    <option value={DriverAccountStatus.SUSPENDED} style={{ background: '#0c0d14' }}>限制停權 (SUSPENDED)</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">行程狀態</label>
-                  <select 
-                    value={tripStatus} 
-                    onChange={(e) => setTripStatus(e.target.value as DriverTripStatus)}
-                    className="form-select"
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: 'var(--radius-sm)',
-                      padding: '8px 12px',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.85rem',
-                      outline: 'none'
-                    }}
-                  >
-                    <option value={DriverTripStatus.OFFLINE} style={{ background: '#0c0d14' }}>已下線 (OFFLINE)</option>
-                    <option value={DriverTripStatus.IDLE} style={{ background: '#0c0d14' }}>上線空車 (IDLE)</option>
-                    <option value={DriverTripStatus.IN_QUEUE} style={{ background: '#0c0d14' }}>排班中 (IN_QUEUE)</option>
-                    <option value={DriverTripStatus.DISPATCHED} style={{ background: '#0c0d14' }}>媒合中 (DISPATCHED)</option>
-                    <option value={DriverTripStatus.EN_ROUTE} style={{ background: '#0c0d14' }}>前往上車地點 (EN_ROUTE)</option>
-                    <option value={DriverTripStatus.ARRIVED} style={{ background: '#0c0d14' }}>抵達點 (ARRIVED)</option>
-                    <option value={DriverTripStatus.IN_SERVICE} style={{ background: '#0c0d14' }}>載客中 (IN_SERVICE)</option>
-                  </select>
-                </div>
+              <div className="driver-edit-fields">
+                <label className="form-group">
+                  <span className="form-label">車牌</span>
+                  <input className="form-input" name="carPlate" value={carPlate} onChange={e => setCarPlate(e.target.value)} placeholder="ABC-1234" required />
+                </label>
+                <label className="form-group">
+                  <span className="form-label">司機</span>
+                  <input className="form-input" name="name" value={name} onChange={e => setName(e.target.value)} required />
+                </label>
+                <label className="form-group driver-edit-phone">
+                  <span className="form-label">手機</span>
+                  <input className="form-input" type="tel" name="phone" value={phone} onChange={e => setPhone(e.target.value)} required />
+                </label>
+                <label className="form-group">
+                  <span className="form-label">廠牌</span>
+                  <input className="form-input" name="carMaker" value={carMaker} onChange={e => setCarMaker(e.target.value)} />
+                </label>
+                <label className="form-group">
+                  <span className="form-label">車款</span>
+                  <input className="form-input" name="carModel" value={carModel} onChange={e => setCarModel(e.target.value)} />
+                </label>
               </div>
 
               <div className="modal-footer">
-                <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">
+                <button type="button" onClick={() => setEditingDriver(null)} className="btn-secondary">
                   取消
                 </button>
                 <button type="submit" className="btn-primary">

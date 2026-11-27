@@ -31,10 +31,15 @@ export const onSnapshot=(ref,callback,error)=>{
   const listeners=window.orderListeners.get(ref.id)||new Set();listeners.add(listener);window.orderListeners.set(ref.id,listeners);queueMicrotask(listener.emit);
   return()=>{active=false;listeners.delete(listener);if(!listeners.size)window.orderListeners.delete(ref.id)};
  }
- const emit=()=>{if(active)callback({forEach:fn=>(window.fixture[ref.name]||[]).forEach(d=>fn({id:d.id,data:()=>d.data}))})};if(ref.name==='orders')window.reemitOrders=emit;if(ref.name==='users')window.reemitUsers=emit;queueMicrotask(emit);return()=>{active=false}
+ const emit=()=>{if(active)callback({forEach:fn=>(window.fixture[ref.name]||[]).forEach(d=>fn({id:d.id,data:()=>d.data}))})};if(ref.name==='orders')window.reemitOrders=emit;if(ref.name==='users')window.reemitUsers=emit;if(ref.name==='drivers')window.reemitDrivers=emit;queueMicrotask(emit);return()=>{active=false}
 };
 export const Timestamp={now:()=>({toDate:()=>new Date()}),fromDate:v=>v};
-export const addDoc=()=>{throw Error('Unexpected write')};export const updateDoc=addDoc;export const deleteDoc=addDoc;
+export const addDoc=()=>{throw Error('Unexpected write')};export const deleteDoc=addDoc;
+export const updateDoc=async(ref,fields)=>{
+ if(!window.driverEdits || ref.path!=='drivers/c')throw Error('Unexpected update');
+ window.driverEdits.push(fields);
+ Object.assign(window.fixture.drivers.find(d=>d.id==='c').data,fields);window.reemitDrivers();
+};
 export const doc=(_db,...parts)=>({path:parts.join('/'),id:parts.at(-1)});export const serverTimestamp=()=>null;
 `);
 const fixture = `
@@ -59,6 +64,12 @@ window.confirm=()=>false;window.alerts=[];window.alert=m=>alerts.push(m);window.
     fixture.users.find(u=>u.id===body.userId).data.accountStatus='DELETED';reemitUsers();
     if(archiveUncertain)return {ok:false,status:503,json:async()=>({error:'封存結果待確認'})};
     return {ok:true,status:200,json:async()=>({deleted:true,userId:body.userId})};
+  }
+  if(body.action==='SET_DRIVER_STATUS'){
+    const driver=fixture.drivers.find(d=>d.id===body.driverId);
+    if(driver.data.accountStatus!==body.expectedStatus)throw Error('Wrong expected status');
+    driver.data.accountStatus=body.accountStatus;reemitDrivers();
+    return {ok:true,status:200,json:async()=>({accountStatus:body.accountStatus})};
   }
   if(body.action==='SET_MEMBER_STATUS'){
     statusWrites.push(body);if(statusUncertain)return {ok:false,status:503,json:async()=>({error:'操作結果待確認'})};
@@ -172,7 +183,7 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     await fill('input.search-input','MEMBER-private');await wait(`document.querySelectorAll('tbody tr').length===0`);
     await fill('input.search-input','');await wait(`document.querySelectorAll('tbody tr').length===5`);
     await wait(`document.querySelector('tbody tr .passenger-count')?.textContent==='20'`);
-    assert.deepEqual(await run(`[...document.querySelectorAll('thead th')].map(el=>el.innerText.replaceAll('\\n','').trim())`),['乘客姓名/編號','帳號權限','當前訂單','完成搭乘','棄單','未出現','註冊時間','操作']);
+    assert.deepEqual(await run(`[...document.querySelectorAll('thead th')].map(el=>el.innerText.replaceAll('\\n','').trim())`),['乘客姓名/編號','帳號狀態','當前訂單','完成搭乘','棄單','未出現','註冊時間','操作']);
     assert.deepEqual(await run(`[...document.querySelectorAll('tbody tr')].slice(0,3).map(r=>[...r.querySelectorAll('.passenger-count')].map(c=>c.textContent))`),[['20','5','1'],['0','0','0'],['—','—','—']]);
     assert.equal(await run(`document.querySelector('tbody').innerText.includes('2026/11/13 08:00:00')`),true);
     assert.equal(await run(`document.body.innerText.includes('聯絡電話')||document.body.innerText.includes('棄單次數')`),false);
@@ -620,7 +631,7 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     console.log('PASS: v3 snapshot card, disabled rebook, map segments, 2 chat segments/earlier pages/XSS, read-only, back/close/page preservation, 390px, permission failure/retry and late response identity isolation.');
     await run(`fixture.drivers = [
       {id:'d',data:{name:'A',carColor:''}},
-      {id:'c',data:{name:'B',carPlate:'ZZZ',plateNumber:'OLD',avatar:'/fixture-avatar.svg',carColor:'黃',carMaker:'TOYOTA',carModel:'RAV4'}},
+      {id:'c',data:{name:'B',phone:'0912000000',carPlate:'ZZZ',plateNumber:'OLD',avatar:'/fixture-avatar.svg',carColor:'黃',carMaker:'TOYOTA',carModel:'RAV4'}},
       {id:'b',data:{name:'C',carPlate:'AAA',avatar:'/missing-avatar.png',carColor:'水泥灰'}},
       {id:'a',data:{name:'D',plateNumber:'BBB',avatar:'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',carColor:'銀色'}}
     ];showView('drivers')`);
@@ -633,10 +644,78 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
       await run(`[...document.querySelectorAll('thead button')].find(b=>b.textContent==='${label}').click()`);
       await wait(`document.querySelector('tbody .passenger-identity img + div > div')?.textContent==='${first}'`);
     }
+    await run(`Object.assign(fixture.drivers[0].data,{accountStatus:'PENDING'});Object.assign(fixture.drivers[2].data,{accountStatus:'SUSPENDED'});
+      Object.assign(fixture.drivers[3].data,{accountStatus:'ARCHIVED'});reemitDrivers()`);
+    await wait(`document.querySelector('[data-syslog="drivers.filter.SUSPENDED"]').textContent==='停用 (2)'`);
+    await run(`window.confirm=()=>true;document.querySelector('[data-syslog="drivers.filter.ARCHIVED"]').click()`);
+    await wait(`document.querySelectorAll('tbody tr').length===1 && document.querySelector('tbody .status-pill').textContent==='已封存'`);
+    await run(`document.querySelector('[data-syslog="drivers.status.SUSPENDED"]').click()`);
+    await wait(`document.querySelector('[data-syslog="drivers.filter.SUSPENDED"]').textContent==='停用 (3)'`);
+    await run(`document.querySelector('[data-syslog="drivers.filter.SUSPENDED"]').click()`);
+    await wait(`document.querySelectorAll('tbody tr').length===3`);
+    await run(`document.querySelector('[data-syslog="drivers.status.ARCHIVED"]').click()`);
+    await wait(`document.querySelector('[data-syslog="drivers.filter.ARCHIVED"]').textContent==='封存 (1)'`);
+    await run(`document.querySelector('[data-syslog="drivers.filter.ARCHIVED"]').click()`);
+    await wait(`document.querySelectorAll('tbody tr').length===1`);
+    await run(`document.querySelector('[data-syslog="drivers.status.ACTIVE"]').click()`);
+    await wait(`document.querySelector('[data-syslog="drivers.filter.ACTIVE"]').textContent==='啟用 (2)'`);
+    await run(`window.confirm=()=>false;document.querySelector('[data-syslog="drivers.filter.ALL"]').click();
+      document.querySelector('[data-syslog="drivers.reload"]').click()`);
+    await wait(`document.querySelectorAll('tbody tr').length===4`);
     await fill('input[placeholder^="搜尋司機"]','ZZZ');
     await wait(`document.querySelectorAll('tbody tr').length===1 && document.querySelector('.order-plate')?.textContent==='ZZZ'`);
-    await run(`document.querySelector('button[title="編輯"]').click()`);
+    await run(`document.querySelector('button[data-syslog="drivers.edit"]').click()`);
     await wait(`document.querySelector('input[placeholder="ABC-1234"]')?.value==='ZZZ'`);
+    assert.deepEqual(await run(`[...document.querySelectorAll('form .form-label')].map(el=>el.textContent)`),
+      ['帳號','車牌','司機','手機','廠牌','車款']);
+    assert.equal(await run(`document.querySelector('#driver-account').disabled`),true);
+    for (const width of [1440,390]) {
+      await send('Emulation.setDeviceMetricsOverride',{width,height:844,deviceScaleFactor:1,mobile:false});
+      await wait(`(()=>{const boxes=[...document.querySelectorAll('.driver-edit-fields input')].map(i=>i.getBoundingClientRect());
+        return boxes[0].top===boxes[1].top && boxes[3].top===boxes[4].top && boxes[0].bottom<=boxes[2].top && boxes[2].bottom<=boxes[3].top &&
+          boxes[0].right<=boxes[1].left && boxes.every(r=>r.width>60 && r.left>=0 && r.right<=innerWidth)})()`);
+      // 模擬自動填寫工具在焦點欄位旁掛載的零高度節點。
+      const measureFocus = (name, accessory) => run(`(() => {
+        const fields = document.querySelector('.driver-edit-fields');
+        const input = fields.querySelector('[name="${name}"]');
+        input.focus();
+        fields.querySelector('[data-autofill-fixture]')?.remove();
+        if (${accessory}) {
+          const host = document.createElement('span');
+          host.dataset.autofillFixture = '';
+          host.style.cssText = 'width:0;height:0';
+          input.after(host);
+        }
+        const origin = fields.getBoundingClientRect().top;
+        return [...fields.querySelectorAll('input')].map(el => el.getBoundingClientRect().top - origin);
+      })()`);
+      const positions = await measureFocus('carPlate', false);
+      for (const name of ['carPlate', 'phone', 'carModel']) {
+        const focused = await measureFocus(name, true);
+        assert.deepEqual(focused, positions, width + 'px ' + name + ' focus');
+      }
+    }
+    assert.equal(await run(`document.querySelectorAll('form select').length`),0);
+    await run(`window.driverEdits=[];Object.assign(fixture.drivers[1].data,{tripStatus:'IN_QUEUE',accountStatus:'ACTIVE',name:'Updated'})`);
+    await fill('input[name="phone"]','0912111111');
+    await run(`document.querySelector('form').requestSubmit()`);
+    await wait(`!document.querySelector('form') && driverEdits.length===1`);
+    assert.deepEqual(await run(`Object.keys(driverEdits[0]).sort()`),['phone','updatedAt']);
+    await run(`document.querySelector('button[data-syslog="drivers.edit"]').click()`);
+    await fill('input[name="carPlate"]','abc-1234');
+    await fill('input[name="name"]','新司機');
+    assert.deepEqual(await run(`[document.querySelector('[name="carMaker"]').value,document.querySelector('[name="carModel"]').value]`),['TOYOTA','RAV4']);
+    await fill('input[name="carMaker"]','Tesla');
+    await fill('input[name="carModel"]','Model Y');
+    await run(`document.querySelector('form').requestSubmit()`);
+    await wait(`driverEdits.length===2 && !document.querySelector('form')`);
+    assert.deepEqual(await run(`[driverEdits[1].carPlate,driverEdits[1].plateNumber,driverEdits[1].name,driverEdits[1].carMaker,driverEdits[1].carModel]`),
+      ['ABC-1234','ABC-1234','新司機','Tesla','Model Y']);
+    await fill('input[placeholder^="搜尋司機"]','ABC-1234');
+    await wait(`document.querySelector('tbody td:nth-child(3)')?.textContent==='Tesla Model Y'`);
+    assert.equal(await run(`[...document.querySelectorAll('button')].some(b=>b.textContent.includes('註冊新司機'))`),false);
+    assert.equal(await run(`document.querySelector('[data-syslog="drivers.edit"]').textContent.trim()`),'編輯');
+    console.log('PASS: 司機列表編輯文字按鈕、封存雙向恢復、手機欄位焦點穩定。');
     await run(`fixture.orders=fixture.orders.slice(0,2);fixture.orders.forEach((o,i)=>Object.assign(o.data,{
       status:'ACCEPTED',carPlate:i?'AAA-1000':'ZZZ-9000',driverName:i?'Zed':'Amy'
     }));showView('orders')`);

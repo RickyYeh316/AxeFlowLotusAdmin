@@ -544,6 +544,22 @@ html, body {
   gap: 16px;
 }
 
+.driver-edit-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
+}
+
+/* Autofill controls may add a sibling to the input. Keep spacing on the label itself. */
+.driver-edit-fields > .form-group { gap: 0; }
+.driver-edit-fields .form-label { margin-bottom: 8px; }
+.driver-edit-phone { grid-column: 1 / -1; }
+
+#driver-account:disabled {
+  color: var(--text-secondary);
+  cursor: not-allowed;
+}
+
 /* Dialogs / Modals overlay */
 .modal-overlay {
   position: fixed;
@@ -585,6 +601,18 @@ body.modal-open .workspace-tabs-bar {
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+.driver-edit-overlay .modal-content {
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+}
+
+@media (max-width: 700px) {
+  .modal-overlay.driver-edit-overlay, .sidebar-collapsed .driver-edit-overlay {
+    left: 0;
+    width: 100%;
+  }
 }
 
 .modal-header {
