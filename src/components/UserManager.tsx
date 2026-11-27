@@ -1,5 +1,7 @@
 'use client';
 
+import { useActionBarSelection } from './TabActionBar';
+
 import ListPagination from './ListPagination';
 import ArchiveMemberDialog from './ArchiveMemberDialog';
 
@@ -197,7 +199,7 @@ export default function UserManager() {
   };
 
   // Filtering States
-  const [accountFilter, setAccountFilter] = useState<string>('ACTIVE');
+  const [accountFilter, setAccountFilter] = useActionBarSelection<string>('category', 'ACTIVE');
   const accountCounts = useMemo(() => ({
     ACTIVE: users.filter(user => user.accountStatus === UserAccountStatus.ACTIVE).length,
     BANNED: users.filter(user => user.accountStatus === UserAccountStatus.BANNED).length,

@@ -1,5 +1,7 @@
 'use client';
 
+import { useActionBarSelection } from './TabActionBar';
+
 import ListPagination from './ListPagination';
 
 import { passengerNumber } from '../lib/passengerNumber';
@@ -26,9 +28,11 @@ const journalKey = (uid: string) => `lotus-coupon-checkout:${uid}`;
 export default function CouponSettlementManager() {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [rows, setRows] = useState<Row[]>([]), [drivers, setDrivers] = useState<Driver[]>([]);
-  const [view, setView] = useState<View>('unsettled');
+  const [view, setView] = useActionBarSelection<View>('category', 'unsettled');
   const [settledTimeQuery, setSettledTimeQuery] = useState('');
-  const [query, setQuery] = useState(''), [selected, setSelected] = useState('');
+  const [query, setQuery] = useState('');
+  const [selected, setSelected] = useActionBarSelection<string>('driver', '');
+  const selectionOwner = useRef(auth.currentUser?.uid);
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [signedIn, setSignedIn] = useState(false);
   const [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [preview, setPreview] = useState<Preview | null>(null), [pending, setPending] = useState<Pending | null>(null);
@@ -62,7 +66,9 @@ export default function CouponSettlementManager() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, user => {
       scope.current++; sequence.current++; requestLock.current = false;
-      setRows([]); setDrivers([]); setPreview(null); setPending(null); setBusy(false); setSelected(''); setQuery('');
+      setRows([]); setDrivers([]); setPreview(null); setPending(null); setBusy(false); setQuery('');
+      if (!user || user.uid !== selectionOwner.current) setSelected('');
+      selectionOwner.current = user?.uid;
       setSettledTimeQuery(''); setNotice(''); setError(''); setJournalBlocked(false); setSignedIn(!!user);
       if (!user) { setLoading(false); setError('請先使用管理員 Google 帳號登入。'); return; }
       try {
@@ -78,7 +84,7 @@ export default function CouponSettlementManager() {
       void reload();
     });
     return () => { scope.current++; sequence.current++; unsubscribe(); };
-  }, [reload]);
+  }, [reload, setSelected]);
 
   const modalOpen = preview !== null;
   useEffect(() => {
@@ -104,6 +110,11 @@ export default function CouponSettlementManager() {
     }
     return [...grouped.values()].sort((a, b) => a.carPlate.localeCompare(b.carPlate, 'zh-TW') || a.id.localeCompare(b.id));
   }, [categoryRows]);
+  useEffect(() => {
+    if (!loading && !error && selected && !driverOptions.some(driver => driver.id === selected)) {
+      setSelected('');
+    }
+  }, [driverOptions, error, loading, selected, setSelected]);
   const filtered = useMemo(() => categoryRows.filter(row => {
     if (selected && row.driverId !== selected) return false;
     if (term && ![row.driverName, row.carPlate, row.passengerName, passengerNumber(row.passengerNumber), row.name, `#${row.readableId}`]

@@ -1,5 +1,7 @@
 'use client';
 
+import { useActionBarSelection } from './TabActionBar';
+
 import ListPagination from './ListPagination';
 
 import { useOrderCancellation } from './useOrderCancellation';
@@ -40,8 +42,8 @@ export default function OrderManager() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [statusFilter, setStatusFilter] = useState<OrderFilter>('serving');
-  const [subcategory, setSubcategory] = useState('all');
+  const [statusFilter, setStatusFilter] = useActionBarSelection<OrderFilter>('category', 'serving');
+  const [subcategory, setSubcategory] = useActionBarSelection<string>('subcategory', 'all');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [driverReadFailures, setDriverReadFailures] = useState<Set<string>>(new Set());

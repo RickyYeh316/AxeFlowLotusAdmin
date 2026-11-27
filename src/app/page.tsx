@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 
 // Components
+import { TabActionBar } from '../components/TabActionBar';
 import Login from '../components/Login';
 import Overview from '../components/Overview';
 import DispatchMap from '../components/DispatchMap';
@@ -358,7 +359,11 @@ export default function Home() {
 
         {/* Body content switches based on tab */}
         <div className={`workspace-body ${activeTab === 'dispatch' ? 'no-padding' : ''}`}>
-          {renderTabContent()}
+          {openTabs.map(tabId => (
+            <TabActionBar key={adminUser.email + '/' + tabId}>
+              {tabId === activeTab ? renderTabContent() : null}
+            </TabActionBar>
+          ))}
         </div>
       </main>
     </div>

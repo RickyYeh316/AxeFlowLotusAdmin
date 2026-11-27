@@ -13,11 +13,18 @@ const config = write('auth.js', `
 const listeners = new Set();
 export const db = {};
 export const auth = { currentUser: { uid: 'test-admin', getIdToken: async () => 'fixture-token' } };
+auth.onAuthStateChanged = callback => {
+  const timer = setTimeout(() => callback({...auth.currentUser, email:'fixture@example.test',photoURL:'/fixture-avatar.svg'}), 20);
+  return () => clearTimeout(timer);
+};
 export function onAuthStateChanged(_auth, callback) { listeners.add(callback); queueMicrotask(() => callback(auth.currentUser)); return () => listeners.delete(callback); }
 window.changeUser = uid => { auth.currentUser = uid ? { uid, getIdToken: async () => 'fixture-token' } : null; listeners.forEach(fn => fn(auth.currentUser)); };
 `);
+const unusedScreen = write('unused-screen.js', 'export default function Screen(){return null}');
+const shellAliases = Object.fromEntries(['Overview','DispatchMap','QueueAreaManager','HintAreaManager','MaintenanceManager','AdminManager','Login']
+  .map(name => ['../components/' + name, unusedScreen]));
 const loader = write('loader.cjs', `const ts=require(${JSON.stringify(require.resolve('typescript'))});module.exports=function(source){return ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true},fileName:this.resourcePath}).outputText}`);
-const entry = write('entry.js', `import {startSystemLog,logScreen} from ${JSON.stringify(path.join(root,'src/lib/systemLogs/client.ts'))}; import React from 'react'; import {createRoot} from 'react-dom/client'; import Manager from ${JSON.stringify(path.join(root,'src/components/UserManager.tsx'))}; import Orders from ${JSON.stringify(path.join(root,'src/components/OrderManager.tsx'))}; import Drivers from ${JSON.stringify(path.join(root,'src/components/DriverManager.tsx'))}; const view=createRoot(document.getElementById('root')); const createLog=window.LotusSystemLog.create; window.LotusSystemLog.create=o=>createLog({...o,intervalMs:20,uploadIntervalMs:0,minUploadMs:0,priorityDelayMs:0});startSystemLog();window.showView=which=>{logScreen(which);view.render(React.createElement(which==='orders'?Orders:which==='drivers'?Drivers:Manager))}; window.showView('users');`);
+const entry = write('entry.js', `import {startSystemLog,logScreen} from ${JSON.stringify(path.join(root,'src/lib/systemLogs/client.ts'))}; import React from 'react'; import {createRoot} from 'react-dom/client'; import Manager from ${JSON.stringify(path.join(root,'src/components/UserManager.tsx'))}; import Orders from ${JSON.stringify(path.join(root,'src/components/OrderManager.tsx'))}; import Drivers from ${JSON.stringify(path.join(root,'src/components/DriverManager.tsx'))}; import Workspace from ${JSON.stringify(path.join(root,'src/app/page.tsx'))}; const view=createRoot(document.getElementById('root')); window.showWorkspace=()=>view.render(React.createElement(Workspace)); const createLog=window.LotusSystemLog.create; window.LotusSystemLog.create=o=>createLog({...o,intervalMs:20,uploadIntervalMs:0,minUploadMs:0,priorityDelayMs:0});startSystemLog();window.showView=which=>{logScreen(which);view.render(React.createElement(which==='orders'?Orders:which==='drivers'?Drivers:Manager))}; window.showView('users');`);
 const store = write('firestore.js', `
 export const collection=(_db,name)=>({name});
 window.orderListeners=new Map();window.orderReadFailures=new Set();
@@ -33,6 +40,10 @@ export const onSnapshot=(ref,callback,error)=>{
  }
  const emit=()=>{if(active)callback({forEach:fn=>(window.fixture[ref.name]||[]).forEach(d=>fn({id:d.id,data:()=>d.data}))})};if(ref.name==='orders')window.reemitOrders=emit;if(ref.name==='users')window.reemitUsers=emit;if(ref.name==='drivers')window.reemitDrivers=emit;queueMicrotask(emit);return()=>{active=false}
 };
+export const getDoc=async ref=>{
+ if(ref.path==='admins/fixture@example.test')return {exists:()=>true,data:()=>({name:'測試管理員'})};
+ throw Error('Unexpected document read: '+ref.path);
+};
 export const Timestamp={now:()=>({toDate:()=>new Date()}),fromDate:v=>v};
 export const addDoc=()=>{throw Error('Unexpected write')};export const deleteDoc=addDoc;
 export const updateDoc=async(ref,fields)=>{
@@ -47,6 +58,8 @@ window.archiveWrites=[];window.archiveUncertain=false;window.archiveStale=false;
 window.confirm=()=>false;window.alerts=[];window.alert=m=>alerts.push(m);window.statusWrites=[];window.statusUncertain=false;window.uploadedLogs=[];window.fetch=async(url,init)=>{
  if(String(url).endsWith('/webAdmin')){
   const body=JSON.parse(init.body);
+  if(body.action==='COUPONS')return {ok:true,json:async()=>({items:[],after:null})};
+  if(body.action==='COUPON_LEDGER')return {ok:true,json:async()=>({items:[{id:'coupon1',name:'測試券',amount:50,driverId:'cab',driverName:'司機',carPlate:'AB-123',redeemedAt:1,settledAt:2,readableId:'123456',orderId:'order1',passengerName:'乘客',passengerId:'p',passengerNumber:'654098',batchId:'batch'}],driver:{id:'cab',name:'司機',carPlate:'AB-123'},after:null})};
   if(body.action==='SYSTEM_CANCEL_ORDER'){
     cancelWrites.push(body);
     if(cancelHold)await new Promise(r=>window.releaseCancel=r);
@@ -90,7 +103,7 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
 `;
 (async () => {
   await new Promise((resolve,reject)=>webpack({mode:'production',plugins:[new webpack.DefinePlugin({'process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY':JSON.stringify('fixture-maps-key')})],entry,output:{path:temp,filename:'bundle.js'},
-    resolve:{extensions:['.tsx','.ts','.js'],modules:[path.join(root,'node_modules'),'node_modules'],alias:{'../firebase/config':config,'../../firebase/config':config,'firebase/auth':config,'firebase/firestore':store}},
+    resolve:{extensions:['.tsx','.ts','.js'],modules:[path.join(root,'node_modules'),'node_modules'],alias:{...shellAliases,'../firebase/config':config,'../../firebase/config':config,'firebase/auth':config,'firebase/firestore':store}},
     module:{rules:[{test:/\.tsx?$/,use:loader}]},optimization:{minimize:false}},(err,stats)=>err?reject(err):stats.hasErrors()?reject(Error(stats.toString({all:false,errors:true}))):resolve()));
   const cssFile = fs.readdirSync(path.join(root,'.next/static/chunks')).find(f=>f.endsWith('.css'));
   const server = http.createServer((req,res)=>{
@@ -636,6 +649,39 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
       {id:'a',data:{name:'D',plateNumber:'BBB',avatar:'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',carColor:'銀色'}}
     ];showView('drivers')`);
     await wait(`document.querySelectorAll('tbody tr').length===4 && document.querySelectorAll('tbody img[src="/passenger-avatar-default.svg"]').length===3`);
+    assert.equal(await run(`document.querySelector('thead th:nth-child(5)').textContent.trim()`),'勤務狀態');
+    const dutySelector = "document.querySelector('tbody tr:first-child .driver-duty')";
+    const gray = 'rgb(129, 147, 171)', red = 'rgb(255, 119, 124)', green = 'rgb(102, 178, 146)';
+    for (const [fields, label, color] of [
+      [{tripStatus:'OFFLINE'}, '下線', gray],
+      [{tripStatus:'IDLE'}, '空車', red],
+      [{tripStatus:'IN_QUEUE'}, '排班中', red],
+      [{tripStatus:'BUSY'}, '私人忙碌', 'rgb(182, 154, 242)'],
+      [{tripStatus:'DISPATCHED'}, '收到派單', 'rgb(214, 179, 92)'],
+      [{tripStatus:'EN_ROUTE'}, '前往上車地點', green],
+      [{tripStatus:'ARRIVED'}, '已抵達', green],
+      [{tripStatus:'IN_SERVICE'}, '載客中', green],
+      [{tripStatus:0, status:'1'}, '下線', gray],
+      [{status:'1'}, '空車', red],
+      [{status:2}, '載客中', green],
+      [{status:'WAIT_APPROVAL'}, '下線', gray],
+      [{tripStatus:'NEW_STATE',status:'0'}, '未知', gray],
+      [{}, '未知', gray]
+    ]) {
+      await run(`fixture.drivers[0].data = {name:'A', ...${JSON.stringify(fields)}}; reemitDrivers()`);
+      await wait(`${dutySelector}?.textContent === ${JSON.stringify(label)} && getComputedStyle(${dutySelector}).color === ${JSON.stringify(color)}`);
+    }
+    console.log('PASS: 司機勤務五色八態、缺值與未知值、舊欄位及數字勤務值。');
+    await wait(`document.querySelector('.list-pagination')?.textContent.includes('共 4 筆資料')`);
+    assert.equal(await run(`document.querySelector('[data-syslog="pagination.previous"]').disabled && document.querySelector('[data-syslog="pagination.next"]').disabled`),true);
+    await run(`fixture.drivers.push(...Array.from({length:9},(_,i)=>({id:'extra'+i,data:{name:'Extra '+i}})));reemitDrivers()`);
+    await wait(`document.querySelectorAll('tbody tr').length===10`);
+    await run(`document.querySelector('[data-syslog="pagination.next"]').click()`);
+    await wait(`document.querySelectorAll('tbody tr').length===3 && document.querySelector('.list-pagination').textContent.includes('11 - 13')`);
+    await fill('.list-pagination select','20');
+    await wait(`document.querySelectorAll('tbody tr').length===13 && document.querySelector('[aria-current="page"]').textContent==='1'`);
+    await run(`fixture.drivers.splice(4);reemitDrivers()`);
+    await wait(`document.querySelectorAll('tbody tr').length===4`);
     assert.deepEqual(await run(`[...document.querySelectorAll('tbody td:nth-child(3)')].map(td=>td.textContent)`),
       ['', 'TOYOTA RAV4', '', '']);
     assert.equal(await run(`document.querySelector('tbody .order-plate')?.textContent`),'ZZZ');
@@ -662,6 +708,15 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     await run(`window.confirm=()=>false;document.querySelector('[data-syslog="drivers.filter.ALL"]').click();
       document.querySelector('[data-syslog="drivers.reload"]').click()`);
     await wait(`document.querySelectorAll('tbody tr').length===4`);
+    assert.equal(await run(`[...document.querySelectorAll('option')].some(o=>o.textContent==='全部行程狀態')`),false);
+    for (const query of ['toyota','rav4',' Toyota Rav4 ']) {
+      await fill('input[placeholder^="搜尋司機"]',query);
+      await wait(`document.querySelectorAll('tbody tr').length===1 && document.querySelector('.order-plate')?.textContent==='ZZZ'`);
+    }
+    await run(`document.querySelector('[data-syslog="drivers.filter.SUSPENDED"]').click()`);
+    await wait(`document.body.textContent.includes('找不到符合篩選條件的司機。')`);
+    await run(`document.querySelector('[data-syslog="drivers.filter.ALL"]').click()`);
+    await wait(`document.querySelector('.order-plate')?.textContent==='ZZZ'`);
     await fill('input[placeholder^="搜尋司機"]','ZZZ');
     await wait(`document.querySelectorAll('tbody tr').length===1 && document.querySelector('.order-plate')?.textContent==='ZZZ'`);
     await run(`document.querySelector('button[data-syslog="drivers.edit"]').click()`);
@@ -728,6 +783,48 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     console.log('PASS: 車號與司機獨立升降排序，司機頭像、帳號／車牌／司機排序與車款顯示。');
     assert.deepEqual(errors,[]);
     console.log('PASS: 訂單v2精簡標籤、時間下方特性、地圖URL／新分頁設定、無效座標隱藏與點擊sysLog；既有搜尋／排序／時區／分頁／預約回歸通過。');
+    // Exercise the actual sidebar and workspace tabs with all five list components.
+    await run(`showWorkspace()`);
+    const pages = [
+      ['司機管理','drivers.filter','SUSPENDED','ALL'],
+      ['乘客管理','users.filter','BANNED','ACTIVE'],
+      ['訂單管理','order.filter','closed','serving'],
+      ['優惠券管理','coupon.filter','invalid','valid'],
+      ['優惠券結帳','settlement.filter','settled','unsettled']
+    ];
+    const clickReady = async selector => {
+      const node = 'document.querySelector(' + JSON.stringify(selector) + ')';
+      await wait(node + ' && !' + node + '.disabled');
+      await run(node + '.click()');
+    };
+    const control = (group,value) => '[data-syslog="' + group + '.' + value + '"]';
+    const pressed = async (group,value) => wait('document.querySelector(' +
+      JSON.stringify(control(group,value)) + ')?.getAttribute("aria-pressed")==="true"');
+    for (const [label,group,value,initial] of pages) {
+      await clickReady('.menu-item[title="' + label + '"]');
+      await pressed(group,initial);
+      await clickReady(control(group,value));
+      await pressed(group,value);
+      if (group==='order.filter') await fill('.order-subcategory','COMPLETED');
+      if (group==='settlement.filter') {
+        await wait(`!!document.querySelector('.order-subcategory option[value="cab"]')`);
+        await fill('.order-subcategory','cab');
+      }
+    }
+    for (const nav of ['.workspace-tab-pill','.menu-item']) {
+      for (const [label,group,value] of pages) {
+        await clickReady(nav + '[title="' + label + '"]');
+        await pressed(group,value);
+        if (group==='order.filter') await wait(`document.querySelector('.order-subcategory').value==='COMPLETED'`);
+        if (group==='settlement.filter') await wait(`document.querySelector('.order-subcategory').value==='cab'`);
+      }
+    }
+    for (const [label,group,,initial] of pages) {
+      await clickReady('button[aria-label="關閉' + label + '分頁"]');
+      await clickReady('.menu-item[title="' + label + '"]');
+      await pressed(group,initial);
+    }
+    console.log('PASS: 五個列表透過側欄及頁籤切換均保留分類、訂單子類及結帳司機，關閉重開恢復預設。');
     console.log('sysLog auth/stream upload fixture PASS. Screenshots: '+temp);
   } finally {ws?.close();chrome.kill('SIGTERM');await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;});

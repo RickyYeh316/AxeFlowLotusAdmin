@@ -1,5 +1,8 @@
 'use client';
 
+import ListPagination from './ListPagination';
+import { useActionBarSelection } from './TabActionBar';
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { adminApi, AdminApiError } from '../lib/adminApi';
 import { db } from '../firebase/config';
@@ -21,8 +24,36 @@ function accountCategory(status: DriverAccountStatus) {
   return status === DriverAccountStatus.PENDING ? DriverAccountStatus.SUSPENDED : status;
 }
 
+type DutyStatus = DriverTripStatus | 'UNKNOWN';
+type DriverRow = Omit<Driver, 'tripStatus'> & { tripStatus: DutyStatus };
+
+const dutyBadges: Record<DutyStatus, { label: string; tone: string }> = {
+  OFFLINE: { label: '下線', tone: 'order-tone-all' },
+  IDLE: { label: '空車', tone: 'duty-tone-vacant' },
+  IN_QUEUE: { label: '排班中', tone: 'duty-tone-vacant' },
+  BUSY: { label: '私人忙碌', tone: 'duty-tone-private' },
+  DISPATCHED: { label: '收到派單', tone: 'order-tone-waiting' },
+  EN_ROUTE: { label: '前往上車地點', tone: 'order-tone-serving' },
+  ARRIVED: { label: '已抵達', tone: 'order-tone-serving' },
+  IN_SERVICE: { label: '載客中', tone: 'order-tone-serving' },
+  UNKNOWN: { label: '未知', tone: 'order-tone-unknown' }
+};
+
+function readDutyStatus(tripStatus: unknown, legacyStatus: unknown): DutyStatus {
+  const raw = tripStatus ?? legacyStatus;
+  if (raw === 0 || raw === '0') return DriverTripStatus.OFFLINE;
+  if (raw === 1 || raw === '1') return DriverTripStatus.IDLE;
+  if (raw === 2 || raw === '2') return DriverTripStatus.IN_SERVICE;
+  if (tripStatus == null && (raw === 'SUSPENDED' || raw === 'WAIT_APPROVAL')) return DriverTripStatus.OFFLINE;
+  return Object.values(DriverTripStatus).find(status => status === raw) ?? 'UNKNOWN';
+}
+
+function vehicleLabel(driver: DriverRow) {
+  return [driver.carMaker, driver.carModel].filter(Boolean).join(' ');
+}
+
 export default function DriverManager() {
-  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [drivers, setDrivers] = useState<DriverRow[]>([]);
   const [loading, setLoading] = useState(true);
   
   const [reloadKey, setReloadKey] = useState(0);
@@ -41,7 +72,7 @@ export default function DriverManager() {
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Modal states
-  const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
+  const [editingDriver, setEditingDriver] = useState<DriverRow | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Form states
@@ -67,18 +98,11 @@ export default function DriverManager() {
     setLoading(true);
     setListError('');
     const unsub = onSnapshot(collection(db, 'drivers'), (snapshot) => {
-      const list: Driver[] = [];
+      const list: DriverRow[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
         
-        // 1. Parsing Trip Status with migration fallbacks
-        let parsedTripStatus = data.tripStatus || data.status || DriverTripStatus.OFFLINE;
-        if (parsedTripStatus === 0 || parsedTripStatus === '0') parsedTripStatus = DriverTripStatus.OFFLINE;
-        else if (parsedTripStatus === 1 || parsedTripStatus === '1') parsedTripStatus = DriverTripStatus.IDLE;
-        else if (parsedTripStatus === 2 || parsedTripStatus === '2') parsedTripStatus = DriverTripStatus.IN_SERVICE;
-        else if (parsedTripStatus === 'SUSPENDED' || parsedTripStatus === 'WAIT_APPROVAL') parsedTripStatus = DriverTripStatus.OFFLINE;
-
-        // 2. Parsing Account Status with migration fallbacks
+        const parsedTripStatus = readDutyStatus(data.tripStatus, data.status);
         let parsedAccountStatus = data.accountStatus;
         if (parsedAccountStatus == null) {
           if (data.status === 'WAIT_APPROVAL') {
@@ -102,7 +126,7 @@ export default function DriverManager() {
           carMaker: data.carMaker || '',
           carModel: data.carModel || '',
           avatar: typeof data.avatar === 'string' && data.avatar.split('?')[0] !== legacyAvatar ? data.avatar.trim() : '',
-          tripStatus: parsedTripStatus as DriverTripStatus,
+          tripStatus: parsedTripStatus,
           accountStatus: parsedAccountStatus as DriverAccountStatus,
           working: parsedTripStatus === DriverTripStatus.IDLE,
           isWorking: parsedTripStatus === DriverTripStatus.IN_SERVICE,
@@ -143,42 +167,18 @@ export default function DriverManager() {
 
   // Filtering States
   const [searchQuery, setSearchQuery] = useState('');
-  const [accountFilter, setAccountFilter] = useState<string>('ALL');
-  const [tripFilter, setTripFilter] = useState<string>('ALL');
+  const [accountFilter, setAccountFilter] = useActionBarSelection<string>('category', 'ALL');
 
   // Filtering & Sorting Logic
   const filteredDrivers = useMemo(() => {
-    return drivers.filter((driver) => {
-      const searchLower = searchQuery.toLowerCase();
-      const matchesSearch = 
-        driver.name.toLowerCase().includes(searchLower) ||
-        driver.email.toLowerCase().includes(searchLower) ||
-        (driver.phone || '').toLowerCase().includes(searchLower) ||
-        driver.plateNumber.toLowerCase().includes(searchLower);
-
-      let matchesAccount = true;
-      if (accountFilter !== 'ALL') {
-        matchesAccount = accountCategory(driver.accountStatus) === accountFilter;
-      }
-
-      let matchesTrip = true;
-      if (tripFilter !== 'ALL') {
-        if (tripFilter === 'ONLINE_IDLE') {
-          matchesTrip = driver.tripStatus === DriverTripStatus.IDLE || driver.tripStatus === DriverTripStatus.IN_QUEUE;
-        } else if (tripFilter === 'BUSY') {
-          matchesTrip = 
-            driver.tripStatus === DriverTripStatus.DISPATCHED ||
-            driver.tripStatus === DriverTripStatus.EN_ROUTE ||
-            driver.tripStatus === DriverTripStatus.ARRIVED ||
-            driver.tripStatus === DriverTripStatus.IN_SERVICE;
-        } else {
-          matchesTrip = driver.tripStatus === tripFilter;
-        }
-      }
-
-      return matchesSearch && matchesAccount && matchesTrip;
+    const query = searchQuery.trim().toLowerCase();
+    return drivers.filter(driver => {
+      const matchesAccount = accountFilter === 'ALL' || accountCategory(driver.accountStatus) === accountFilter;
+      const matchesSearch = [driver.name, driver.email, driver.phone, driver.plateNumber, vehicleLabel(driver)]
+        .some(value => value?.toLowerCase().includes(query));
+      return matchesAccount && matchesSearch;
     });
-  }, [drivers, searchQuery, accountFilter, tripFilter]);
+  }, [drivers, searchQuery, accountFilter]);
 
   const sortedDrivers = useMemo(() => {
     let sortable = [...filteredDrivers];
@@ -208,45 +208,7 @@ export default function DriverManager() {
     return sortedDrivers.slice(start, start + itemsPerPage);
   }, [sortedDrivers, currentPage, itemsPerPage]);
 
-  // Generate page numbers with ellipsis
-  const getPageNumbers = () => {
-    const pages: (number | string)[] = [];
-    if (totalPages <= 7) {
-      for (let i = 1; i <= totalPages; i++) {
-        pages.push(i);
-      }
-      return pages;
-    }
-
-    pages.push(1);
-
-    if (currentPage > 4) {
-      pages.push('...');
-    }
-
-    let start = Math.max(2, currentPage - 2);
-    let end = Math.min(totalPages - 1, currentPage + 2);
-
-    if (currentPage <= 4) {
-      end = 5;
-    }
-    if (currentPage >= totalPages - 3) {
-      start = totalPages - 4;
-    }
-
-    for (let i = start; i <= end; i++) {
-      pages.push(i);
-    }
-
-    if (currentPage < totalPages - 3) {
-      pages.push('...');
-    }
-
-    pages.push(totalPages);
-    return pages;
-  };
-
-  const openEditModal = (driver: Driver) => {
+  const openEditModal = (driver: DriverRow) => {
     setEditingDriver(driver);
     setName(driver.name);
     setPhone(driver.phone || '');
@@ -288,7 +250,7 @@ export default function DriverManager() {
     }
   };
 
-  const changeAccountStatus = async (driver: Driver, target: DriverAccountStatus, label: string) => {
+  const changeAccountStatus = async (driver: DriverRow, target: DriverAccountStatus, label: string) => {
     if (submittingStatus.current || !window.confirm(`確定要${label}司機 ${driver.email} 嗎？`)) return;
     submittingStatus.current = true;
     setStatusBusy(true);
@@ -304,36 +266,12 @@ export default function DriverManager() {
     }
   };
 
-  const getDriverAccountStatusText = (driver: Driver) => {
+  const getDriverAccountStatusText = (driver: DriverRow) => {
     switch (accountCategory(driver.accountStatus)) {
       case DriverAccountStatus.ACTIVE: return '正常啟用';
       case DriverAccountStatus.SUSPENDED: return '已停權';
       case DriverAccountStatus.ARCHIVED: return '已封存';
       default: return '未知';
-    }
-  };
-
-  const getDriverTripStatusText = (driver: Driver) => {
-    switch (driver.tripStatus) {
-      case DriverTripStatus.OFFLINE: return '已下線';
-      case DriverTripStatus.IDLE: return '上線空車';
-      case DriverTripStatus.IN_QUEUE: return '排班中';
-      case DriverTripStatus.DISPATCHED: return '媒合中';
-      case DriverTripStatus.EN_ROUTE: return '前往上車地點';
-      case DriverTripStatus.ARRIVED: return '抵達乘客點';
-      case DriverTripStatus.IN_SERVICE: return '載客中';
-      default: return '已下線';
-    }
-  };
-
-  const getDriverTripStatusClass = (driver: Driver) => {
-    switch (driver.tripStatus) {
-      case DriverTripStatus.OFFLINE: return 'status-pill offline';
-      case DriverTripStatus.IDLE:
-      case DriverTripStatus.IN_QUEUE:
-        return 'status-pill online';
-      default:
-        return 'status-pill busy';
     }
   };
 
@@ -365,45 +303,21 @@ export default function DriverManager() {
           {/* Filters Bar */}
           <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
             {/* Search */}
-            <div className="search-wrapper" style={{ width: 280 }}>
+            <div className="search-wrapper order-search">
               <Search size={16} className="search-icon" />
               <input 
                 type="text" 
                 value={searchQuery}
                 onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                placeholder="搜尋司機姓名、電話、車牌..." 
+                placeholder="搜尋司機姓名、帳號、手機、車牌、廠牌或車款"
                 className="search-input"
               />
-            </div>
-
-            {/* Trip Status Filter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              <span>行程狀態:</span>
-              <select 
-                value={tripFilter}
-                onChange={(e) => { setTripFilter(e.target.value); setCurrentPage(1); }}
-                style={{
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 6,
-                  padding: '6px 12px',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.8rem',
-                  outline: 'none',
-                  cursor: 'pointer'
-                }}
-              >
-                <option value="ALL" style={{ background: '#0c0d14' }}>全部行程狀態</option>
-                <option value="OFFLINE" style={{ background: '#0c0d14' }}>已下線 (OFFLINE)</option>
-                <option value="ONLINE_IDLE" style={{ background: '#0c0d14' }}>空車候客 (IDLE/排班中)</option>
-                <option value="BUSY" style={{ background: '#0c0d14' }}>載客忙碌 (媒合/載客中)</option>
-              </select>
             </div>
           </div>
 
           {filteredDrivers.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-              {searchQuery || accountFilter !== 'ALL' || tripFilter !== 'ALL' ? '找不到符合篩選條件的司機。' : '目前尚無註冊司機。'}
+              {searchQuery || accountFilter !== 'ALL' ? '找不到符合篩選條件的司機。' : '目前尚無註冊司機。'}
             </div>
           ) : (
             <div className="admin-table-container">
@@ -423,7 +337,7 @@ export default function DriverManager() {
                     <th style={{ cursor: 'pointer' }} onClick={() => requestSort('phone')}>手機 {getSortIcon('phone')}</th>
                     <th style={{ cursor: 'pointer' }} onClick={() => requestSort('carMaker')}>車款 {getSortIcon('carMaker')}</th>
                     <th style={{ cursor: 'pointer' }} onClick={() => requestSort('accountStatus')}>帳號狀態 {getSortIcon('accountStatus')}</th>
-                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('tripStatus')}>工作行程 {getSortIcon('tripStatus')}</th>
+                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('tripStatus')}>勤務狀態 {getSortIcon('tripStatus')}</th>
                     <th>操作</th>
                   </tr>
                 </thead>
@@ -447,7 +361,7 @@ export default function DriverManager() {
                   </td>
                   <td>{driver.phone}</td>
                   <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                    {[driver.carMaker, driver.carModel].filter(Boolean).join(' ')}
+                    {vehicleLabel(driver)}
                   </td>
                   <td>
                     <span className={driver.accountStatus === DriverAccountStatus.ACTIVE ? 'status-pill online' : 'status-pill offline'}>
@@ -455,8 +369,8 @@ export default function DriverManager() {
                     </span>
                   </td>
                   <td>
-                    <span className={getDriverTripStatusClass(driver)}>
-                      {getDriverTripStatusText(driver)}
+                    <span className={`status-pill driver-duty ${dutyBadges[driver.tripStatus].tone}`}>
+                      {dutyBadges[driver.tripStatus].label}
                     </span>
                   </td>
                   <td>
@@ -479,81 +393,8 @@ export default function DriverManager() {
             </tbody>
           </table>
 
-          {/* Pagination Controls */}
-          {totalPages > 1 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginTop: 20, padding: '12px 8px 4px 8px', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                  顯示第 {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, sortedDrivers.length)} 筆，共 {sortedDrivers.length} 筆資料
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                  <span>每頁顯示:</span>
-                  <select 
-                    value={itemsPerPage} 
-                    onChange={(e) => {
-                      setItemsPerPage(Number(e.target.value));
-                      setCurrentPage(1);
-                    }}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: 4,
-                      padding: '2px 8px',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.75rem',
-                      outline: 'none',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <option value={10} style={{ background: '#0c0d14' }}>10 筆</option>
-                    <option value={20} style={{ background: '#0c0d14' }}>20 筆</option>
-                    <option value={50} style={{ background: '#0c0d14' }}>50 筆</option>
-                    <option value={100} style={{ background: '#0c0d14' }}>100 筆</option>
-                  </select>
-                </div>
-              </div>
-              
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <button 
-                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} 
-                  disabled={currentPage === 1}
-                  className="btn-secondary"
-                  style={{ padding: '6px 12px', fontSize: '0.75rem' }}
-                >
-                  上一頁
-                </button>
-                
-                {getPageNumbers().map((pageNum, idx) => {
-                  if (pageNum === '...') {
-                    return (
-                      <span key={`ellipsis-${idx}`} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 32, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        ...
-                      </span>
-                    );
-                  }
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() => setCurrentPage(Number(pageNum))}
-                      className={currentPage === pageNum ? 'btn-primary' : 'btn-secondary'}
-                      style={{ padding: '6px 12px', fontSize: '0.75rem', minWidth: 32, height: 'auto', borderRadius: 4, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
-
-                <button 
-                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} 
-                  disabled={currentPage === totalPages}
-                  className="btn-secondary"
-                  style={{ padding: '6px 12px', fontSize: '0.75rem' }}
-                >
-                  下一頁
-                </button>
-              </div>
-            </div>
-          )}
+          <ListPagination totalItems={sortedDrivers.length} currentPage={currentPage} itemsPerPage={itemsPerPage}
+            onPageChange={setCurrentPage} onPageSizeChange={setItemsPerPage} />
         </div>
       )
     }

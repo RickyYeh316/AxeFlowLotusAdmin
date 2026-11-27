@@ -1,5 +1,7 @@
 'use client';
 
+import { useActionBarSelection } from './TabActionBar';
+
 import ListPagination from './ListPagination';
 
 import { passengerNumber } from '../lib/passengerNumber';
@@ -26,7 +28,7 @@ export default function MarketingManager() {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [rows, setRows] = useState<CouponRow[]>([]), [loading, setLoading] = useState(true);
   const [error, setError] = useState(''), [notice, setNotice] = useState('');
-  const [view, setView] = useState<'valid' | 'invalid' | 'all'>('valid');
+  const [view, setView] = useActionBarSelection<'valid' | 'invalid' | 'all'>('category', 'valid');
   const [listQuery, setListQuery] = useState('');
   const [page, setPage] = useState(1), [now, setNow] = useState(() => Date.now());
   const [sort, setSort] = useState<{ key: 'title' | 'type' | 'discountAmount' | 'startDate' | 'endDate'; ascending: boolean }>({ key: 'title', ascending: true });

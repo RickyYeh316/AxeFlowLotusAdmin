@@ -20,6 +20,7 @@ export enum OrderStatus {
 export enum DriverTripStatus {
   OFFLINE = "OFFLINE", // 未上線/未報班
   IDLE = "IDLE", // 上線空車中
+  BUSY = "BUSY", // 私人忙碌
   IN_QUEUE = "IN_QUEUE", // 排班熱區等待中
   DISPATCHED = "DISPATCHED", // 收到派單/媒合中
   EN_ROUTE = "EN_ROUTE", // 確認接單前往中
