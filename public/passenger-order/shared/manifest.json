@@ -1,6 +1,6 @@
 {
   "shared/presentation.js": "48e4f4788d12c319c2e5b063b73001170511ac1d23b753f5f3985f359132d949",
-  "shared/order-card.js": "f585d223ad57e2d00c179d334038a00b94d0af04a48cdd50a2bec363882f71dc",
+  "shared/order-card.js": "e7985f8ebb6c76ffd79ba60eb255cd7cf063fa2b86f1937c69aa5e41bf97e0c3",
   "shared/order-map.js": "4263173ce8ce3bb33ba824699bc6c91b344057a1d2b37dc296b8c184247681a6",
   "shared/order-chat.js": "eb4ecc83d8efbe71eb547381df9e4b2c805985b8b55db4b938836f150547eee7",
   "shared/google-maps.js": "017849916c3dec095181afb7d3e77b7730b8dbdb4b7296f7c1f2a5e3e8b7a154",

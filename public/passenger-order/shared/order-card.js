@@ -99,13 +99,14 @@ window.LotusOrderCard = { create({orderMaps, orderChats, rebook, readOnly = fals
     {
       const meta = node('div', '', 'card-meta');
       meta.append(node('div', `訂單編號：${orderNumber}`), node('div', `乘客姓名：${passengerName}`));
-      const name = typeof item.driver?.name === 'string' ? item.driver.name.trim() : '';
+      const driverText = [item.driver?.carMaker, item.driver?.carModel, item.driver?.name]
+        .filter(value => typeof value === 'string').map(value => value.trim()).filter(Boolean).join(' ');
       const plate = typeof item.driver?.carPlate === 'string' ? item.driver.carPlate.trim() : '';
-      if (name || plate) {
+      if (driverText || plate) {
         const identity = node('div', '', 'driver-identity');
         identity.append(node('span', '車號司機：', 'driver-label'));
         if (plate) identity.append(node('span', plate, 'taxi-plate'));
-        if (name) identity.append(node('span', name, 'driver-name'));
+        if (driverText) identity.append(node('span', driverText, 'driver-name'));
         meta.append(identity);
       }
       section.append(meta);

@@ -654,7 +654,7 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     assert.equal(await fr(`d.body.innerText.includes('本次搭乘已完成')`),false);
     assert.equal(await fr(`d.querySelector('.rebook-button').textContent`),'重新叫車');
     assert.equal(await fr(`w.getComputedStyle(d.querySelector('.order-card')).borderRightColor`),'rgb(196, 123, 139)');
-    assert.equal(await fr(`d.body.innerText.includes('快照司機')&&d.body.innerText.includes('新戶券 · 100 元')`),true);
+    assert.equal(await fr(`d.querySelector('.driver-name').textContent==='TOYOTA RAV4 快照司機'&&d.body.innerText.includes('新戶券 · 100 元')`),true);
     await wait(`document.querySelector('iframe').contentDocument.querySelector('.order-map-canvas')`);
     await fr(`d.querySelector('.order-map-preview').click()`);
     await wait(`document.querySelector('iframe').contentDocument.querySelector('dialog[open] .order-map-canvas')`);
