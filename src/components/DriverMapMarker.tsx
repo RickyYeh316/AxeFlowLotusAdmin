@@ -4,7 +4,7 @@ import DriverAvatar from './DriverAvatar';
 
 export type MapDriver = Pick<DriverRow,
   'email' | 'name' | 'plateNumber' | 'avatar' | 'tripStatus' | 'disconnectedDuringOrder'
-> & { currentLocation: LocationData };
+> & { currentLocation: LocationData; connection: 'online' | 'offline' | 'unknown' };
 
 export default function DriverMapMarker({ driver, selected, mapHeading = 0 }: {
   driver: MapDriver;
@@ -14,7 +14,7 @@ export default function DriverMapMarker({ driver, selected, mapHeading = 0 }: {
   const badge = dutyBadges[driver.tripStatus];
   const angle = (driver.currentLocation.bearing ?? 0) - mapHeading;
   return (
-    <span className={`duty-map-marker ${badge.tone}${selected ? ' selected' : ''}`}>
+    <span className={`duty-map-marker ${badge.tone}${driver.connection === 'offline' ? ' offline' : ''}${selected ? ' selected' : ''}`}>
       <span className="duty-marker-face">
         <DriverAvatar avatar={driver.avatar} />
         <span aria-hidden="true" className="duty-marker-ring" style={{ transform: `rotate(${angle}deg)` }} />

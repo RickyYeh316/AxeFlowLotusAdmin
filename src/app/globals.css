@@ -771,6 +771,12 @@ body.modal-open .workspace-tabs-bar {
   overflow-y: auto;
 }
 
+.duty-map-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .driver-map-item {
   position: relative;
   color: var(--text-primary);
@@ -903,6 +909,21 @@ body.modal-open .workspace-tabs-bar {
   border-left: 5px solid transparent;
   border-right: 5px solid transparent;
   border-bottom: 7px solid #ff6369;
+}
+
+.duty-map-marker.offline .duty-marker-face {
+  background: #515763;
+}
+
+.duty-map-marker.offline .duty-marker-face img,
+.duty-map-marker.offline .duty-marker-ring {
+  filter: grayscale(80%);
+  opacity: .65;
+}
+
+.duty-map-marker.offline .duty-marker-label {
+  background: #333945;
+  color: color-mix(in srgb, var(--order-tone) 75%, white);
 }
 
 .duty-map-marker.selected .duty-marker-face {

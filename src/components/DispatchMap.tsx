@@ -13,13 +13,20 @@ import { dutyLabel, readDriverDuty } from '../lib/driverDuty';
 import DriverMapMarker, { type MapDriver } from './DriverMapMarker';
 import DriverMapCluster, { groupMapDrivers, projectMapPosition, type DriverMapGroup } from './DriverMapCluster';
 import DriverAvatar from './DriverAvatar';
-import { Compass, TrafficCone, Layers } from 'lucide-react';
+import { TrafficCone, Layers } from 'lucide-react';
 import { MockMap } from './MockMap';
 
 interface DispatchMapProps {
   apiKey: string;
   active?: boolean;
 }
+
+const dutyScopes = [
+  { value: 'online', label: '上線', tone: 'serving' },
+  { value: 'offline', label: '下線', tone: 'all' },
+  { value: 'all', label: '全部', tone: 'all' }
+] as const;
+type DutyScope = typeof dutyScopes[number]['value'];
 
 function CopyableMapValue({ value, label, className = '' }: { value: string; label: string; className?: string }) {
   return (
@@ -93,12 +100,20 @@ const MapController: React.FC<{
 export default function DispatchMap({ apiKey, active = true }: DispatchMapProps) {
   const [drivers, setDrivers] = useState<MapDriver[]>([]);
   const [selection, setSelection] = useState<{ email: string; position: google.maps.LatLngLiteral; zoomToDriver: boolean } | null>(null);
-  const selectedDriver = drivers.find(driver => driver.email === selection?.email && driver.tripStatus !== DriverTripStatus.OFFLINE) ?? null;
+  const [scope, setScope] = useState<DutyScope>('all');
+  const visibleDrivers = useMemo(() => scope === 'all' ? drivers : drivers.filter(driver => driver.connection === scope), [drivers, scope]);
+  const selectedDriver = visibleDrivers.find(driver => driver.email === selection?.email) ?? null;
+  const focusPosition = selectedDriver ? selection?.position ?? null : null;
+  const counts = {
+    all: drivers.length,
+    online: drivers.filter(driver => driver.connection === 'online').length,
+    offline: drivers.filter(driver => driver.connection === 'offline').length
+  };
 
   const [initialCamera] = useState(() => readMapCamera('google') ?? { center: { lat: 25.0412, lng: 121.5645 }, zoom: 13 });
   const [mapZoom, setMapZoom] = useState(initialCamera.zoom);
   const [previewGroup, setPreviewGroup] = useState<string | null>(null);
-  const groups = useMemo(() => groupMapDrivers(drivers, pos => projectMapPosition(pos, mapZoom)), [drivers, mapZoom]);
+  const groups = useMemo(() => groupMapDrivers(visibleDrivers, pos => projectMapPosition(pos, mapZoom)), [visibleDrivers, mapZoom]);
   const [mapHeading, setMapHeading] = useState(0);
   const [mapStyle, setMapStyle] = useState(readMapStyle);
   const [showTraffic, setShowTraffic] = useState(false);
@@ -125,12 +140,12 @@ export default function DispatchMap({ apiKey, active = true }: DispatchMapProps)
     setPreviewGroup(null);
     const { lat, lng } = driver.currentLocation;
     setSelection(current => {
-      if (driver.tripStatus === DriverTripStatus.OFFLINE || (toggle && current?.email === driver.email)) return null;
+      if (toggle && current?.email === driver.email) return null;
       return { email: driver.email, position: { lat, lng }, zoomToDriver: true };
     });
   }
 
-  // Firestore live stream subscription for online drivers
+  // Firestore live stream subscription for drivers with a reported location
   useEffect(() => {
     if (!active) return;
     let listening = true;
@@ -143,12 +158,16 @@ export default function DispatchMap({ apiKey, active = true }: DispatchMapProps)
         const location = data.currentLocation;
         if (!Number.isFinite(location?.lat) || !Number.isFinite(location?.lng)) return;
         const plateNumber = data.carPlate || data.plateNumber || '未填寫車牌';
+        const duty = readDriverDuty(data.tripStatus, data.status, data.presenceStatus);
+        const offline = duty.tripStatus === DriverTripStatus.OFFLINE || data.presenceStatus === 'DISCONNECTED';
+        const online = data.presenceStatus === 'CONNECTED' || duty.tripStatus !== 'UNKNOWN';
         list.push({
           email: doc.id,
           name: data.name || '未命名司機',
           plateNumber,
           avatar: data.avatar,
-          ...readDriverDuty(data.tripStatus, data.status, data.presenceStatus),
+          ...duty,
+          connection: offline ? 'offline' : online ? 'online' : 'unknown',
           currentLocation: {
             lat: location.lat,
             lng: location.lng,
@@ -166,7 +185,7 @@ export default function DispatchMap({ apiKey, active = true }: DispatchMapProps)
         setSelection(current => {
           if (!current) return null;
           const driver = list.find(item => item.email === current.email);
-          if (!driver || driver.tripStatus === DriverTripStatus.OFFLINE) return null;
+          if (!driver) return null;
           const last = previous?.find(item => item.email === current.email)?.currentLocation;
           const { lat, lng } = driver.currentLocation;
           if (last && (last.lat !== lat || last.lng !== lng)) return { email: current.email, position: { lat, lng }, zoomToDriver: false };
@@ -231,16 +250,16 @@ export default function DispatchMap({ apiKey, active = true }: DispatchMapProps)
                 );
               })}
 
-              <MapController focusPosition={selection?.position ?? null} zoomToDriver={selection?.zoomToDriver ?? false}
+              <MapController focusPosition={focusPosition} zoomToDriver={selection?.zoomToDriver ?? false}
                 active={active} showTraffic={active && showTraffic} />
             </Map>
           </div>
         </APIProvider>
       ) : (
         <MockMap
-          locations={drivers}
+          locations={visibleDrivers}
           selectedLocation={selectedDriver}
-          focusPosition={selection?.position ?? null}
+          focusPosition={focusPosition}
           zoomToDriver={selection?.zoomToDriver ?? false}
           isGroupExpanded={isGroupExpanded}
           onToggleGroup={toggleGroup}
@@ -312,20 +331,25 @@ export default function DispatchMap({ apiKey, active = true }: DispatchMapProps)
 
       {/* 3. Floating Map Overlay Driver Info Panel */}
       <div className="map-overlay-panel animate-fade-in">
-        <h3 className="sheet-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Compass size={18} />
-          勤務地圖 ({drivers.length})
-        </h3>
-        
+        <div className="duty-map-filters" role="group" aria-label="勤務連線狀態">
+          {dutyScopes.map(({ value, label, tone }) => (
+            <button key={value} type="button" aria-pressed={scope === value}
+              className={`category-pill order-filter order-tone-${tone}${scope === value ? ' active' : ''}`}
+              onClick={() => { setScope(value); setPreviewGroup(null); }}>
+              {label} ({counts[value]})
+            </button>
+          ))}
+        </div>
+
         {loading ? (
           <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-secondary)' }}>載入車隊中...</div>
-        ) : drivers.length === 0 ? (
+        ) : visibleDrivers.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-            目前無線上服務中的司機
+            {scope === 'all' ? '目前沒有可定位的司機' : scope === 'online' ? '目前沒有上線司機可顯示' : '目前沒有下線司機可顯示'}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {drivers.map((driver) => {
+            {visibleDrivers.map((driver) => {
               const isSelected = selectedDriver?.email === driver.email;
 
               return (
