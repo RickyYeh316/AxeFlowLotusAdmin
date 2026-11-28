@@ -736,10 +736,14 @@ body.modal-open .workspace-tabs-bar {
 
 /* Dispatch Map (Full Screen) View */
 .map-page-container {
-  width: 100%;
-  height: 100%;
-  position: relative;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
+}
+
+.map-page-container[inert] {
+  visibility: hidden;
+  opacity: 0;
 }
 
 .full-map {
@@ -748,6 +752,11 @@ body.modal-open .workspace-tabs-bar {
 }
 
 .map-overlay-panel {
+  background: linear-gradient(var(--bg-surface), var(--bg-surface)), var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  color: var(--text-primary);
   position: absolute;
   top: 24px;
   right: 24px;
@@ -763,6 +772,9 @@ body.modal-open .workspace-tabs-bar {
 }
 
 .driver-map-item {
+  position: relative;
+  color: var(--text-primary);
+  text-align: left;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -774,15 +786,183 @@ body.modal-open .workspace-tabs-bar {
   transition: var(--transition-smooth);
 }
 
+.driver-map-pick {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.driver-map-meta, .driver-map-coordinates {
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.driver-map-meta {
+  display: flex;
+  justify-content: space-between;
+}
+
+.driver-map-copy {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.driver-map-copy > span {
+  visibility: hidden;
+}
+
+.driver-map-copy > input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: inherit;
+  cursor: text;
+}
+
+.driver-map-coordinates {
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+
 .driver-map-item:hover {
   background: rgba(255, 255, 255, 0.06);
   border-color: var(--border-color-hover);
 }
 
 .driver-map-item.selected {
-  border-color: var(--color-secondary);
-  background: rgba(6, 182, 212, 0.05);
-  box-shadow: 0 0 15px rgba(6, 182, 212, 0.1);
+  border-color: var(--color-primary);
+  background: var(--bg-surface-active);
+}
+
+/* Duty markers on Google Maps and the fallback map. */
+.duty-map-marker {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.duty-marker-face {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  background: #171b27;
+  border: 1px solid #a1aab6;
+  border-radius: 50%;
+  box-shadow: 0 2px 5px #0008;
+}
+
+.duty-marker-face img {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.duty-marker-ring {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.duty-marker-ring::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 7px solid #ff6369;
+}
+
+.duty-map-marker.selected .duty-marker-face {
+  box-shadow: 0 0 0 2px white, 0 0 0 5px var(--color-primary);
+}
+
+.duty-marker-label {
+  white-space: nowrap;
+  border-radius: 5px;
+  padding: 2px 6px;
+  background: var(--bg-base);
+  color: var(--order-tone);
+  border: 1px solid currentColor;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  box-shadow: 0 2px 4px #0006;
+}
+
+.mock-driver-marker {
+  overflow: visible;
+  pointer-events: none;
+  text-align: center;
+}
+
+.mock-driver-marker button {
+  background: transparent;
+  border: 0;
+  pointer-events: auto;
+}
+
+.duty-cluster {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  pointer-events: none;
+}
+
+.duty-cluster-count {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 2px solid white;
+  background: #155faa;
+  color: white;
+  font: 700 16px/1 var(--font-sans, sans-serif);
+  box-shadow: 0 2px 5px #0006;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.duty-cluster-branch, .duty-cluster-line, .duty-cluster-member {
+  position: absolute;
+}
+
+.duty-cluster-branch {
+  top: 50%;
+  left: 50%;
+}
+
+.duty-cluster-line {
+  height: 2px;
+  background: #155faa;
+  transform-origin: left center;
+}
+
+.duty-cluster-member {
+  transform: translate(-50%, -22px);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  pointer-events: auto;
 }
 
 /* CSS Pulse Ring on Map */

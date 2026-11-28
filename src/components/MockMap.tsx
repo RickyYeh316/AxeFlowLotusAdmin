@@ -1,19 +1,28 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Driver } from '../types';
+import React, { useState, useEffect, useEffectEvent, useRef } from 'react';
+import DriverMapMarker, { type MapDriver } from './DriverMapMarker';
+import DriverMapCluster, { groupMapDrivers, type DriverMapGroup } from './DriverMapCluster';
 import { ZoomIn, ZoomOut, Info } from 'lucide-react';
 
 interface MockMapProps {
-  locations: Driver[];
-  selectedLocation: Driver | null;
-  onSelectLocation: (location: Driver | null) => void;
+  locations: MapDriver[];
+  selectedLocation: MapDriver | null;
+  focusPosition: { lat: number; lng: number } | null;
+  zoomToDriver: boolean;
+  isGroupExpanded: (group: DriverMapGroup) => boolean;
+  onToggleGroup: (group: DriverMapGroup) => void;
+  onSelectLocation: (location: MapDriver) => void;
   mapStyle: 'standard' | 'dark' | 'retro' | 'cool-blue';
 }
 
 export const MockMap: React.FC<MockMapProps> = ({
   locations,
   selectedLocation,
+  focusPosition,
+  zoomToDriver,
+  isGroupExpanded,
+  onToggleGroup,
   onSelectLocation,
   mapStyle,
 }) => {
@@ -38,25 +47,25 @@ export const MockMap: React.FC<MockMapProps> = ({
     return { x, y };
   };
 
-  // Center on selected location when it changes
+  const groups = groupMapDrivers(locations, ({ lat, lng }) => {
+    const { x, y } = projectCoord(lat, lng);
+    return { x: x * zoom, y: y * zoom };
+  });
+  // Paint the open group above the other SVG markers.
+  groups.sort((a, b) => Number(isGroupExpanded(a)) - Number(isGroupExpanded(b)));
+
+  const centerOnDriver = useEffectEvent((position: { lat: number; lng: number }, zoomToDriver: boolean) => {
+    if (!mapRef.current) return;
+    const { x, y } = projectCoord(position.lat, position.lng);
+    const rect = mapRef.current.getBoundingClientRect();
+    const scale = zoomToDriver ? 1.3 : zoom;
+    setPan({ x: rect.width / 2 - x * scale, y: rect.height / 2 - y * scale });
+    if (zoomToDriver) setZoom(scale);
+  });
+
   useEffect(() => {
-    if (selectedLocation && selectedLocation.currentLocation) {
-      const loc = selectedLocation.currentLocation;
-      const { x, y } = projectCoord(loc.lat, loc.lng);
-      
-      if (mapRef.current) {
-        const rect = mapRef.current.getBoundingClientRect();
-        const centerX = rect.width / 2;
-        const centerY = rect.height / 2;
-        
-        setPan({
-          x: centerX - (x * zoom),
-          y: centerY - (y * zoom),
-        });
-        setZoom(1.3);
-      }
-    }
-  }, [selectedLocation]);
+    if (focusPosition) centerOnDriver(focusPosition, zoomToDriver);
+  }, [focusPosition, zoomToDriver]);
 
   // Dragging handlers
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -118,14 +127,6 @@ export const MockMap: React.FC<MockMapProps> = ({
 
   const theme = themes[mapStyle] || themes.dark;
 
-  const getDriverColor = (driver: Driver, isSelected: boolean) => {
-    if (isSelected) return '#ff2a5f'; // Active Red
-    if (driver.accountStatus === 'SUSPENDED') return '#eab308'; // Yellow for suspended
-    if (driver.tripStatus === 'OFFLINE') return '#6b7280'; // Gray
-    if (driver.tripStatus === 'IDLE' || driver.tripStatus === 'IN_QUEUE') return '#10b981'; // Green
-    return '#ef4444'; // Red for busy / active service
-  };
-
   return (
     <div 
       className="map-viewport" 
@@ -135,7 +136,8 @@ export const MockMap: React.FC<MockMapProps> = ({
         cursor: isDragging ? 'grabbing' : 'grab',
         userSelect: 'none',
         overflow: 'hidden',
-        position: 'absolute'
+        position: 'absolute',
+        inset: 0
       }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
@@ -174,6 +176,7 @@ export const MockMap: React.FC<MockMapProps> = ({
         style={{
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
           transformOrigin: '0 0',
+          overflow: 'visible',
           transition: isDragging ? 'none' : 'transform 0.4s cubic-bezier(0.1, 0.8, 0.25, 1)',
         }}
       >
@@ -230,99 +233,29 @@ export const MockMap: React.FC<MockMapProps> = ({
         <text x="850" y="250" fill={theme.label} fontSize="14" fontWeight="bold" opacity="0.6">松山區</text>
 
         {/* Drivers */}
-        {locations.map((driver) => {
-          if (!driver.currentLocation) return null;
-          const loc = driver.currentLocation;
-          const { x, y } = projectCoord(loc.lat, loc.lng);
+        {groups.map(group => {
+          const { id, members, position } = group;
+          const { x, y } = projectCoord(position.lat, position.lng);
+          if (members.length > 1) {
+            const expanded = isGroupExpanded(group);
+            return (
+              <g key={id} transform={`translate(${x} ${y}) scale(${1 / zoom})`}>
+                <foreignObject x={-20} y={-20} width={40} height={40} overflow="visible">
+                  <DriverMapCluster members={members} expanded={expanded} selectedEmail={selectedLocation?.email}
+                    onToggle={() => onToggleGroup(group)} onSelect={onSelectLocation} />
+                </foreignObject>
+              </g>
+            );
+          }
+          const driver = members[0];
           const isSelected = selectedLocation?.email === driver.email;
-          const color = getDriverColor(driver, isSelected);
-          const rotationAngle = (loc.bearing || 0) - 90;
-
           return (
-            <g 
-              key={driver.email} 
-              style={{ cursor: 'pointer' }}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelectLocation(driver);
-              }}
-            >
-              <g transform={`translate(${x}, ${y}) rotate(${rotationAngle})`} style={{ transition: 'transform 0.5s ease-out' }}>
-                <circle
-                  cx="0"
-                  cy="0"
-                  r={isSelected ? 20 : 12}
-                  fill="none"
-                  stroke={color}
-                  strokeWidth="2"
-                  opacity={isSelected ? 0.9 : 0.4}
-                >
-                  <animate
-                    attributeName="r"
-                    values={`${isSelected ? 14 : 8};${isSelected ? 28 : 16};${isSelected ? 14 : 8}`}
-                    dur="2s"
-                    repeatCount="indefinite"
-                  />
-                  <animate
-                    attributeName="opacity"
-                    values="0.8;0;0.8"
-                    dur="2s"
-                    repeatCount="indefinite"
-                  />
-                </circle>
-
-                <circle
-                  cx="0"
-                  cy="0"
-                  r={isSelected ? 12 : 9}
-                  fill={color}
-                  stroke="#ffffff"
-                  strokeWidth={isSelected ? 2.5 : 1.5}
-                />
-
-                <polygon
-                  points="0,-16 -4,-10 4,-10"
-                  fill={color}
-                  stroke="#ffffff"
-                  strokeWidth="1"
-                />
-
-                <text
-                  x="0"
-                  y="4"
-                  textAnchor="middle"
-                  fontSize={isSelected ? "11px" : "9px"}
-                  fill="#000"
-                  style={{ fontWeight: 'bold' }}
-                >
-                  🚕
-                </text>
-              </g>
-
-              {/* License Plate Display Label */}
-              <g transform={`translate(${x}, ${y})`}>
-                <rect
-                  x="-25"
-                  y={isSelected ? "22" : "15"}
-                  width="50"
-                  height="12"
-                  rx="3"
-                  fill={isSelected ? "#ff2a5f" : "rgba(10, 11, 20, 0.85)"}
-                  stroke="rgba(255,255,255,0.1)"
-                  strokeWidth="0.5"
-                />
-                <text
-                  x="0"
-                  y={isSelected ? "31" : "24"}
-                  textAnchor="middle"
-                  fontSize="7.5px"
-                  fill="#ffffff"
-                  fontWeight="bold"
-                >
-                  {driver.plateNumber || driver.carPlate}
-                </text>
-              </g>
-            </g>
+            <foreignObject key={driver.email} x={x - 110} y={y - 22} width={220} height={80}
+              className="mock-driver-marker">
+              <button type="button" onClick={() => onSelectLocation(driver)} aria-pressed={isSelected}>
+                <DriverMapMarker driver={driver} selected={isSelected} />
+              </button>
+            </foreignObject>
           );
         })}
       </svg>

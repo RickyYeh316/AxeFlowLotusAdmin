@@ -91,13 +91,6 @@ export default function Home() {
     return () => unsubscribe();
   }, [adminUser]);
 
-  // Automatically collapse sidebar on dispatch map to maximize screen area
-  useEffect(() => {
-    if (activeTab === 'dispatch') {
-      setSidebarCollapsed(true);
-    }
-  }, [activeTab]);
-
   const handleLoginSuccess = (user: AdminUser) => {
     setAdminUser(user);
   };
@@ -114,6 +107,7 @@ export default function Home() {
   const handleNavigate = (tabId: string) => {
     if (!openTabs.includes(tabId)) {
       setOpenTabs([...openTabs, tabId]);
+      if (tabId === 'dispatch') setSidebarCollapsed(true);
     }
     setActiveTab(tabId);
   };
@@ -149,7 +143,7 @@ export default function Home() {
   const getTabLabel = (tabId: string) => {
     switch (tabId) {
       case 'overview': return '儀表板總覽';
-      case 'dispatch': return '派車現況';
+      case 'dispatch': return '勤務地圖';
       case 'drivers': return '司機管理';
       case 'queueAreas': return '排班區管理';
       case 'users': return '乘客管理';
@@ -179,13 +173,9 @@ export default function Home() {
   }
 
   const renderTabContent = () => {
-    const mapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
-
     switch (activeTab) {
       case 'overview':
         return <Overview onNavigate={handleNavigate} />;
-      case 'dispatch':
-        return <DispatchMap apiKey={mapsApiKey} />;
       case 'queueAreas': return <QueueAreaManager />;
       case 'drivers':
         return <DriverManager />;
@@ -237,10 +227,10 @@ export default function Home() {
           <button 
             onClick={() => handleNavigate('dispatch')}
             className={`menu-item ${activeTab === 'dispatch' ? 'active' : ''}`}
-            title="派車現況"
+            title="勤務地圖"
           >
             <Compass size={18} />
-            {!sidebarCollapsed && <span>派車現況</span>}
+            {!sidebarCollapsed && <span>勤務地圖</span>}
           </button>
           
           <button 
@@ -361,7 +351,9 @@ export default function Home() {
         <div className={`workspace-body ${activeTab === 'dispatch' ? 'no-padding' : ''}`}>
           {openTabs.map(tabId => (
             <TabActionBar key={adminUser.email + '/' + tabId}>
-              {tabId === activeTab ? renderTabContent() : null}
+              {tabId === 'dispatch' ? (
+                <DispatchMap active={activeTab === tabId} apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''} />
+              ) : tabId === activeTab ? renderTabContent() : null}
             </TabActionBar>
           ))}
         </div>

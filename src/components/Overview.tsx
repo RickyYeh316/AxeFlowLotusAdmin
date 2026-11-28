@@ -298,13 +298,13 @@ export default function Overview({ onNavigate }: OverviewProps) {
             className="btn-primary" 
             style={{ width: '100%', justifyContent: 'center', padding: 14 }}
           >
-            即時派車現況地圖
+            勤務地圖
           </button>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>系統操作說明</span>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-              1. <b>派車現況</b>: 提供滿版地圖，即時更新線上司機軌跡，並可檢視叫車熱點。
+              1. <b>勤務地圖</b>: 查看司機位置、行進方向與勤務狀態。
             </p>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
               2. <b>手動指派</b>: 在「訂單管理」分頁，可手動為任何乘客指派特定上線司機。

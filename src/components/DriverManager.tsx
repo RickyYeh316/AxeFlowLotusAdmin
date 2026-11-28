@@ -8,10 +8,9 @@ import { adminApi, AdminApiError } from '../lib/adminApi';
 import { db } from '../firebase/config';
 import { collection, onSnapshot, doc, updateDoc } from '../lib/loggedFirestore';
 import { Search, RefreshCw, X, Check, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react';
-import { Driver, DriverTripStatus, DriverAccountStatus } from '../types';
-
-const defaultAvatar = '/passenger-avatar-default.svg';
-const legacyAvatar = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde';
+import { DriverTripStatus, DriverAccountStatus } from '../types';
+import { dutyBadges, readDutyStatus, type DriverRow } from '../lib/driverDuty';
+import DriverAvatar from './DriverAvatar';
 
 const categories = [
   [DriverAccountStatus.ACTIVE, '啟用', 'serving'],
@@ -22,30 +21,6 @@ const categories = [
 
 function accountCategory(status: DriverAccountStatus) {
   return status === DriverAccountStatus.PENDING ? DriverAccountStatus.SUSPENDED : status;
-}
-
-type DutyStatus = DriverTripStatus | 'UNKNOWN';
-type DriverRow = Omit<Driver, 'tripStatus'> & { tripStatus: DutyStatus };
-
-const dutyBadges: Record<DutyStatus, { label: string; tone: string }> = {
-  OFFLINE: { label: '下線', tone: 'order-tone-all' },
-  IDLE: { label: '空車', tone: 'duty-tone-vacant' },
-  IN_QUEUE: { label: '排班中', tone: 'duty-tone-vacant' },
-  BUSY: { label: '私人忙碌', tone: 'duty-tone-private' },
-  DISPATCHED: { label: '收到派單', tone: 'order-tone-waiting' },
-  EN_ROUTE: { label: '前往上車地點', tone: 'order-tone-serving' },
-  ARRIVED: { label: '已抵達', tone: 'order-tone-serving' },
-  IN_SERVICE: { label: '載客中', tone: 'order-tone-serving' },
-  UNKNOWN: { label: '未知', tone: 'order-tone-unknown' }
-};
-
-function readDutyStatus(tripStatus: unknown, legacyStatus: unknown): DutyStatus {
-  const raw = tripStatus ?? legacyStatus;
-  if (raw === 0 || raw === '0') return DriverTripStatus.OFFLINE;
-  if (raw === 1 || raw === '1') return DriverTripStatus.IDLE;
-  if (raw === 2 || raw === '2') return DriverTripStatus.IN_SERVICE;
-  if (tripStatus == null && (raw === 'SUSPENDED' || raw === 'WAIT_APPROVAL')) return DriverTripStatus.OFFLINE;
-  return Object.values(DriverTripStatus).find(status => status === raw) ?? 'UNKNOWN';
 }
 
 function vehicleLabel(driver: DriverRow) {
@@ -125,7 +100,7 @@ export default function DriverManager() {
           carColor: data.carColor || '',
           carMaker: data.carMaker || '',
           carModel: data.carModel || '',
-          avatar: typeof data.avatar === 'string' && data.avatar.split('?')[0] !== legacyAvatar ? data.avatar.trim() : '',
+          avatar: data.avatar,
           tripStatus: parsedTripStatus,
           accountStatus: parsedAccountStatus as DriverAccountStatus,
           working: parsedTripStatus === DriverTripStatus.IDLE,
@@ -346,10 +321,7 @@ export default function DriverManager() {
                 <tr key={driver.email}>
                   <td>
                     <div className="passenger-identity">
-                      <img src={driver.avatar || defaultAvatar} alt="" onError={event => {
-                        const image = event.currentTarget;
-                        if (image.getAttribute('src') !== defaultAvatar) image.src = defaultAvatar;
-                      }} />
+                      <DriverAvatar avatar={driver.avatar} />
                       <div>
                         <div>{driver.email}</div>
                         <div className="order-driver">

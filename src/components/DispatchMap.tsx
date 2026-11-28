@@ -1,36 +1,48 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { DriverTripStatus } from '../types';
 import { db } from '../firebase/config';
 import { collection, onSnapshot } from '../lib/loggedFirestore';
 import { APIProvider, Map, useMap, AdvancedMarker } from '@vis.gl/react-google-maps';
 import { mapStyles } from '../data/mapStyles';
-import { Driver, Order, DriverTripStatus, DriverAccountStatus } from '../types';
-import { MapPin, Compass, Info, TrafficCone, Layers, Award, Phone, Shield } from 'lucide-react';
-import { MockMap } from './MockMap'; // We will create this as a separate file to keep this clean
+import { dutyBadges, readDutyStatus } from '../lib/driverDuty';
+import DriverMapMarker, { type MapDriver } from './DriverMapMarker';
+import DriverMapCluster, { groupMapDrivers, projectMapPosition, type DriverMapGroup } from './DriverMapCluster';
+import DriverAvatar from './DriverAvatar';
+import { Compass, TrafficCone, Layers } from 'lucide-react';
+import { MockMap } from './MockMap';
 
 interface DispatchMapProps {
   apiKey: string;
+  active?: boolean;
+}
+
+function CopyableMapValue({ value, label, className = '' }: { value: string; label: string; className?: string }) {
+  return (
+    <span className={`driver-map-copy ${className}`}>
+      <span aria-hidden="true">{value}</span>
+      <input readOnly value={value} aria-label={label} />
+    </span>
+  );
 }
 
 // Map Controller for panning and zoom
 const MapController: React.FC<{
-  selectedDriver: Driver | null;
+  focusPosition: google.maps.LatLngLiteral | null;
+  zoomToDriver: boolean;
   showTraffic: boolean;
-}> = ({ selectedDriver, showTraffic }) => {
+}> = ({ focusPosition, zoomToDriver, showTraffic }) => {
   const map = useMap();
   const trafficLayerRef = useRef<google.maps.TrafficLayer | null>(null);
 
   useEffect(() => {
-    if (!map || !selectedDriver || !selectedDriver.currentLocation) return;
-    map.panTo({
-      lat: selectedDriver.currentLocation.lat,
-      lng: selectedDriver.currentLocation.lng
-    });
-    if ((map.getZoom() || 13) < 15) {
+    if (!map || !focusPosition) return;
+    map.panTo(focusPosition);
+    if (zoomToDriver && (map.getZoom() || 13) < 15) {
       map.setZoom(15);
     }
-  }, [map, selectedDriver]);
+  }, [map, focusPosition, zoomToDriver]);
 
   useEffect(() => {
     if (!map) return;
@@ -52,104 +64,109 @@ const MapController: React.FC<{
   return null;
 };
 
-export default function DispatchMap({ apiKey }: DispatchMapProps) {
-  const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
+export default function DispatchMap({ apiKey, active = true }: DispatchMapProps) {
+  const [drivers, setDrivers] = useState<MapDriver[]>([]);
+  const [selection, setSelection] = useState<{ email: string; position: google.maps.LatLngLiteral; zoomToDriver: boolean } | null>(null);
+  const selectedDriver = drivers.find(driver => driver.email === selection?.email && driver.tripStatus !== DriverTripStatus.OFFLINE) ?? null;
+
+  const [mapZoom, setMapZoom] = useState(13);
+  const [previewGroup, setPreviewGroup] = useState<string | null>(null);
+  const groups = useMemo(() => groupMapDrivers(drivers, pos => projectMapPosition(pos, mapZoom)), [drivers, mapZoom]);
+  const [mapHeading, setMapHeading] = useState(0);
   const [mapStyle, setMapStyle] = useState<'standard' | 'dark' | 'retro' | 'cool-blue'>('dark');
   const [showTraffic, setShowTraffic] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  function containsSelection(group: DriverMapGroup) {
+    return group.members.some(driver => driver.email === selectedDriver?.email);
+  }
+
+  function isGroupExpanded(group: DriverMapGroup) {
+    return group.id === previewGroup || containsSelection(group);
+  }
+
+  function toggleGroup(group: DriverMapGroup) {
+    if (containsSelection(group)) {
+      setSelection(null);
+      setPreviewGroup(null);
+    } else {
+      setPreviewGroup(current => current === group.id ? null : group.id);
+    }
+  }
+
+  function selectDriver(driver: MapDriver, toggle = false) {
+    setPreviewGroup(null);
+    const { lat, lng } = driver.currentLocation;
+    setSelection(current => {
+      if (driver.tripStatus === DriverTripStatus.OFFLINE || (toggle && current?.email === driver.email)) return null;
+      return { email: driver.email, position: { lat, lng }, zoomToDriver: true };
+    });
+  }
+
   // Firestore live stream subscription for online drivers
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'drivers'), (snapshot) => {
-      const list: Driver[] = [];
+    if (!active) return;
+    let listening = true;
+    let previousLiveDrivers: MapDriver[] | undefined;
+    const unsub = onSnapshot(collection(db, 'drivers'), { includeMetadataChanges: true }, (snapshot) => {
+      if (!listening) return;
+      const list: MapDriver[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
-        // 1. Parsing Trip Status with migration fallbacks
-        let parsedTripStatus = data.tripStatus || data.status || DriverTripStatus.OFFLINE;
-        if (parsedTripStatus === 0 || parsedTripStatus === '0') parsedTripStatus = DriverTripStatus.OFFLINE;
-        else if (parsedTripStatus === 1 || parsedTripStatus === '1') parsedTripStatus = DriverTripStatus.IDLE;
-        else if (parsedTripStatus === 2 || parsedTripStatus === '2') parsedTripStatus = DriverTripStatus.IN_SERVICE;
-        else if (parsedTripStatus === 'SUSPENDED' || parsedTripStatus === 'WAIT_APPROVAL') parsedTripStatus = DriverTripStatus.OFFLINE;
-
-        // 2. Parsing Account Status with migration fallbacks
-        let parsedAccountStatus = data.accountStatus;
-        if (!parsedAccountStatus) {
-          if (data.status === 'WAIT_APPROVAL') {
-            parsedAccountStatus = DriverAccountStatus.PENDING;
-          } else if (data.status === 'SUSPENDED') {
-            parsedAccountStatus = DriverAccountStatus.SUSPENDED;
-          } else {
-            parsedAccountStatus = DriverAccountStatus.ACTIVE;
-          }
-        }
-
+        const location = data.currentLocation;
+        if (!Number.isFinite(location?.lat) || !Number.isFinite(location?.lng)) return;
+        const plateNumber = data.carPlate || data.plateNumber || '未填寫車牌';
         list.push({
           email: doc.id,
-          id: doc.id,
           name: data.name || '未命名司機',
-          phone: data.phone || '無電話',
-          plateNumber: data.plateNumber || data.carPlate || '未填寫車牌',
-          carPlate: data.carPlate || data.plateNumber || '未填寫車牌',
-          carColor: data.carColor || '',
-          carMaker: data.carMaker || '',
-          carModel: data.carModel || '',
-          avatar: data.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-          tripStatus: parsedTripStatus as DriverTripStatus,
-          accountStatus: parsedAccountStatus as DriverAccountStatus,
-          working: parsedTripStatus === DriverTripStatus.IDLE,
-          isWorking: parsedTripStatus === DriverTripStatus.IN_SERVICE,
-          loginCount: data.loginCount || 0,
-          currentLocation: data.currentLocation ? {
-            lat: data.currentLocation.lat,
-            lng: data.currentLocation.lng,
-            bearing: data.currentLocation.bearing || 0,
-            speed: data.currentLocation.speed || 0,
-            updatedAt: data.currentLocation.updatedAt
-          } : undefined,
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt
+          plateNumber,
+          avatar: data.avatar,
+          tripStatus: readDutyStatus(data.tripStatus, data.status),
+          currentLocation: {
+            lat: location.lat,
+            lng: location.lng,
+            bearing: location.bearing || 0,
+            speed: location.speed || 0,
+            updatedAt: location.updatedAt
+          }
         });
       });
 
-      // Filter only drivers that have active locations on map
-      const activeDrivers = list.filter(d => d.currentLocation && d.currentLocation.lat);
-      setDrivers(activeDrivers);
+      // A cached or first snapshot can refresh markers without moving the saved camera.
+      if (!snapshot.metadata.fromCache) {
+        const previous = previousLiveDrivers;
+        previousLiveDrivers = list;
+        setSelection(current => {
+          if (!current) return null;
+          const driver = list.find(item => item.email === current.email);
+          if (!driver || driver.tripStatus === DriverTripStatus.OFFLINE) return null;
+          const last = previous?.find(item => item.email === current.email)?.currentLocation;
+          const { lat, lng } = driver.currentLocation;
+          if (last && (last.lat !== lat || last.lng !== lng)) return { email: current.email, position: { lat, lng }, zoomToDriver: false };
+          return current;
+        });
+      }
+      setDrivers(list);
       setLoading(false);
     }, (error) => {
+      if (!listening) return;
+      setDrivers([]);
+      setSelection(null);
       console.error("Error subscribing to drivers locations:", error);
       setLoading(false);
     });
 
-    return () => unsub();
-  }, []);
-
-  // Sync selected driver if locations change
-  useEffect(() => {
-    if (selectedDriver) {
-      const updated = drivers.find(d => d.email === selectedDriver.email);
-      if (updated) setSelectedDriver(updated);
-    }
-  }, [drivers, selectedDriver]);
+    return () => {
+      listening = false;
+      unsub();
+    };
+  }, [active]);
 
   // Center of Taipei
   const defaultCenter = { lat: 25.0412, lng: 121.5645 };
   const defaultZoom = 13;
 
   const hasValidKey = apiKey && apiKey.startsWith('AIzaSy');
-
-  const getMarkerBgColor = (driver: Driver) => {
-    if (driver.accountStatus === DriverAccountStatus.SUSPENDED) return '#eab308'; // Yellow for Suspended
-    if (driver.accountStatus === DriverAccountStatus.PENDING) return '#818cf8'; // Indigo for Pending
-    if (driver.tripStatus === DriverTripStatus.OFFLINE) return '#6b7280'; // Gray for Offline
-    if (driver.tripStatus === DriverTripStatus.IDLE || driver.tripStatus === DriverTripStatus.IN_QUEUE) return '#10b981'; // Green for Idle
-    return '#ef4444'; // Red for Busy
-  };
-
-  const getVehicleLabel = (maker?: string, model?: string) => {
-    if (!maker && !model) return '標準計程車';
-    return `${maker || ''} ${model || ''}`.trim();
-  };
 
   const mapStyleLabels = {
     standard: '標準地圖',
@@ -159,7 +176,7 @@ export default function DispatchMap({ apiKey }: DispatchMapProps) {
   };
 
   return (
-    <div className="map-page-container">
+    <div className="map-page-container" inert={!active}>
       {/* 1. Map Renderer (Google Map or Mock SVG Map) */}
       {hasValidKey ? (
         <APIProvider apiKey={apiKey}>
@@ -171,65 +188,41 @@ export default function DispatchMap({ apiKey }: DispatchMapProps) {
               disableDefaultUI={true}
               styles={mapStyles[mapStyle]}
               mapId="LOTUS_ADMIN_MAP"
+              onZoomChanged={event => setMapZoom(event.detail.zoom)}
+              onHeadingChanged={event => setMapHeading(event.detail.heading)}
             >
-              {drivers.map((driver) => {
+              {groups.map(group => {
+                const { id, members, position } = group;
+                if (members.length > 1) {
+                  const expanded = isGroupExpanded(group);
+                  return (
+                    <AdvancedMarker key={id} position={position} anchorLeft="-50%" anchorTop="-50%"
+                      clickable zIndex={expanded ? 3 : 2}>
+                      <DriverMapCluster members={members} selectedEmail={selectedDriver?.email} mapHeading={mapHeading}
+                        expanded={expanded} onToggle={() => toggleGroup(group)} onSelect={selectDriver} />
+                    </AdvancedMarker>
+                  );
+                }
+                const driver = members[0];
                 const isSelected = selectedDriver?.email === driver.email;
-                const bgColor = getMarkerBgColor(driver);
-                const loc = driver.currentLocation!;
-
+                const loc = driver.currentLocation;
                 return (
                   <AdvancedMarker
                     key={driver.email}
                     position={{ lat: loc.lat, lng: loc.lng }}
-                    onClick={() => setSelectedDriver(driver)}
+                    anchorLeft="-50%"
+                    anchorTop="-22px"
+                    title={`${driver.name} · ${driver.plateNumber} · ${dutyBadges[driver.tripStatus].label}`}
+                    zIndex={isSelected ? 1 : 0}
+                    onClick={() => selectDriver(driver)}
                   >
-                    <div style={{
-                      transform: `scale(${isSelected ? 1.2 : 1})`,
-                      transition: 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      cursor: 'pointer'
-                    }}>
-                      {/* Car Pointer */}
-                      <div style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: '50%',
-                        backgroundColor: bgColor,
-                        border: isSelected ? '3px solid #ff2a5f' : '2px solid white',
-                        boxShadow: isSelected ? '0 0 15px #ff2a5f, 0 4px 10px rgba(0,0,0,0.5)' : '0 2px 6px rgba(0,0,0,0.3)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transform: `rotate(${loc.bearing || 0}deg)`,
-                        transition: 'transform 0.5s ease-out',
-                        fontSize: 16
-                      }}>
-                        🚕
-                      </div>
-                      
-                      {/* License plate label */}
-                      <div style={{
-                        marginTop: 4,
-                        backgroundColor: isSelected ? '#ff2a5f' : 'rgba(7, 8, 13, 0.9)',
-                        color: 'white',
-                        fontSize: 8,
-                        fontWeight: 700,
-                        padding: '2px 6px',
-                        borderRadius: 4,
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.4)',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        {driver.plateNumber}
-                      </div>
-                    </div>
+                    <DriverMapMarker driver={driver} selected={isSelected} mapHeading={mapHeading} />
                   </AdvancedMarker>
                 );
               })}
 
-              <MapController selectedDriver={selectedDriver} showTraffic={showTraffic} />
+              <MapController focusPosition={selection?.position ?? null} zoomToDriver={selection?.zoomToDriver ?? false}
+                showTraffic={active && showTraffic} />
             </Map>
           </div>
         </APIProvider>
@@ -237,7 +230,11 @@ export default function DispatchMap({ apiKey }: DispatchMapProps) {
         <MockMap
           locations={drivers}
           selectedLocation={selectedDriver}
-          onSelectLocation={setSelectedDriver}
+          focusPosition={selection?.position ?? null}
+          zoomToDriver={selection?.zoomToDriver ?? false}
+          isGroupExpanded={isGroupExpanded}
+          onToggleGroup={toggleGroup}
+          onSelectLocation={selectDriver}
           mapStyle={mapStyle}
         />
       )}
@@ -300,10 +297,10 @@ export default function DispatchMap({ apiKey }: DispatchMapProps) {
       </div>
 
       {/* 3. Floating Map Overlay Driver Info Panel */}
-      <div className="glass map-overlay-panel animate-fade-in">
-        <h3 style={{ fontSize: '0.95rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Compass size={18} className="text-cyan" />
-          線上車隊監控 ({drivers.length})
+      <div className="map-overlay-panel animate-fade-in">
+        <h3 className="sheet-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Compass size={18} />
+          勤務地圖 ({drivers.length})
         </h3>
         
         {loading ? (
@@ -316,70 +313,32 @@ export default function DispatchMap({ apiKey }: DispatchMapProps) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {drivers.map((driver) => {
               const isSelected = selectedDriver?.email === driver.email;
-              const isBusy = driver.tripStatus !== DriverTripStatus.IDLE && driver.tripStatus !== DriverTripStatus.IN_QUEUE && driver.tripStatus !== DriverTripStatus.OFFLINE;
-              const statusText = driver.accountStatus === DriverAccountStatus.SUSPENDED ? '停權中' : driver.tripStatus === DriverTripStatus.OFFLINE ? '已下線' : isBusy ? '載客中' : '空車中';
-              const statusClass = driver.accountStatus === DriverAccountStatus.SUSPENDED ? 'status-pill offline' : driver.tripStatus === DriverTripStatus.OFFLINE ? 'status-pill offline' : isBusy ? 'status-pill busy' : 'status-pill online';
+              const badge = dutyBadges[driver.tripStatus];
 
               return (
-                <div
-                  key={driver.email}
-                  onClick={() => setSelectedDriver(driver)}
-                  className={`driver-map-item ${isSelected ? 'selected' : ''}`}
-                >
-                  <img src={driver.avatar} alt={driver.name} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />
-                  <div style={{ flexGrow: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>{driver.name}</span>
-                      <span className={statusClass} style={{ fontSize: '0.65rem', padding: '2px 6px' }}>{statusText}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                      <span>{driver.plateNumber}</span>
-                      <span>{driver.currentLocation?.speed ? `${Math.round(driver.currentLocation.speed * 3.6)} km/h` : '靜止'}</span>
-                    </div>
-                  </div>
+                <div key={driver.email} className={`driver-map-item ${isSelected ? 'selected' : ''}`}>
+                  <button type="button" className="driver-map-pick" aria-pressed={isSelected}
+                    aria-label={`${driver.name} · ${driver.plateNumber} · ${badge.label}`}
+                    onClick={() => selectDriver(driver, true)} />
+                  <DriverAvatar avatar={driver.avatar} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />
+                  <span style={{ flexGrow: 1, minWidth: 0 }}>
+                    <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{driver.name}</span>
+                      <span className={`status-pill driver-duty ${badge.tone}`}>{badge.label}</span>
+                    </span>
+                    <span className="driver-map-meta">
+                      <CopyableMapValue label="車牌" value={driver.plateNumber} />
+                      <span>{driver.currentLocation.speed ? `${Math.round(driver.currentLocation.speed * 3.6)} km/h` : '靜止'}</span>
+                    </span>
+                    <CopyableMapValue label="經緯度" className="driver-map-coordinates"
+                      value={`${driver.currentLocation.lat.toFixed(6)}, ${driver.currentLocation.lng.toFixed(6)}`} />
+                  </span>
                 </div>
               );
             })}
           </div>
         )}
 
-        {/* Selected Driver Detailed Widget */}
-        {selectedDriver && (
-          <div style={{
-            marginTop: 8,
-            paddingTop: 16,
-            borderTop: '1px solid var(--border-color)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 12
-          }} className="animate-fade-in">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <img src={selectedDriver.avatar} alt={selectedDriver.name} style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-color)' }} />
-              <div>
-                <h4 style={{ fontWeight: 700, fontSize: '0.9rem' }}>{selectedDriver.name} 司機</h4>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{getVehicleLabel(selectedDriver.carMaker, selectedDriver.carModel)} ({selectedDriver.carColor}色)</p>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: '0.75rem', background: 'rgba(255,255,255,0.02)', padding: 10, borderRadius: 6 }}>
-              <div>車牌: <strong style={{ color: 'white' }}>{selectedDriver.plateNumber}</strong></div>
-              <div>聯絡: <strong style={{ color: 'white' }}>{selectedDriver.phone}</strong></div>
-              <div style={{ gridColumn: 'span 2', marginTop: 4 }}>
-                座標: <span style={{ color: 'var(--text-secondary)' }}>{selectedDriver.currentLocation?.lat.toFixed(5)}, {selectedDriver.currentLocation?.lng.toFixed(5)}</span>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 8 }}>
-              <a href={`tel:${selectedDriver.phone}`} className="btn-secondary" style={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: '0.75rem', padding: 8 }}>
-                <Phone size={12} />
-                撥打電話
-              </a>
-              <button onClick={() => setSelectedDriver(null)} className="btn-danger" style={{ padding: 8, fontSize: '0.75rem' }}>
-                關閉面板
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
