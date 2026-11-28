@@ -18,6 +18,15 @@ import { collection, onSnapshot } from '../lib/loggedFirestore';
 import { Search, ChevronUp, ChevronDown, RefreshCw } from 'lucide-react';
 import { Order, User, UserTripStatus, UserAccountStatus } from '../types';
 
+const orderTags = [
+  { kind: 'instant', label: '即時', matches: (order: Order) => !order.isScheduled },
+  { kind: 'scheduled', label: '預約', matches: (order: Order) => order.isScheduled },
+  { kind: 'coupon', label: '優惠券', matches: (order: Order) => Boolean(order.couponId) },
+  { kind: 'elderly', label: '敬老', matches: (order: Order) => order.isElderlyCare },
+] as const;
+
+type OrderTag = typeof orderTags[number]['kind'];
+
 function mapUrl(location: Order['destination']): string | null {
   if (!location || typeof location.lat !== 'number' || typeof location.lng !== 'number' ||
       !Number.isFinite(location.lat) || !Number.isFinite(location.lng) ||
@@ -44,6 +53,19 @@ export default function OrderManager() {
   const [users, setUsers] = useState<User[]>([]);
   const [statusFilter, setStatusFilter] = useActionBarSelection<OrderFilter>('category', 'serving');
   const [subcategory, setSubcategory] = useActionBarSelection<string>('subcategory', 'all');
+  const [timing, setTiming] = useActionBarSelection<'all' | 'instant' | 'scheduled'>('timing', 'all');
+  const [coupon, setCoupon] = useActionBarSelection<'off' | 'on'>('coupon', 'off');
+  const [elderly, setElderly] = useActionBarSelection<'off' | 'on'>('elderly', 'off');
+  const selectedTags = useMemo(() => orderTags.filter(({ kind }) =>
+    kind === timing || (kind === 'coupon' && coupon === 'on') || (kind === 'elderly' && elderly === 'on')
+  ), [timing, coupon, elderly]);
+
+  function toggleTag(kind: OrderTag) {
+    if (kind === 'coupon') setCoupon(coupon === 'on' ? 'off' : 'on');
+    else if (kind === 'elderly') setElderly(elderly === 'on' ? 'off' : 'on');
+    else setTiming(timing === kind ? 'all' : kind);
+  }
+
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [driverReadFailures, setDriverReadFailures] = useState<Set<string>>(new Set());
@@ -63,7 +85,7 @@ export default function OrderManager() {
   // Reset page when filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [statusFilter, subcategory]);
+  }, [statusFilter, subcategory, selectedTags]);
 
   // Load orders and passenger numbers
   useEffect(() => {
@@ -259,9 +281,10 @@ export default function OrderManager() {
           endAddr.toLowerCase().includes(searchLower);
       }
 
-      return matchesStatus && (subcategory === 'all' || orderSubcategory(order) === subcategory) && matchesSearch;
+      return matchesStatus && (subcategory === 'all' || orderSubcategory(order) === subcategory) &&
+        selectedTags.every(tag => tag.matches(order)) && matchesSearch;
     });
-  }, [orders, statusFilter, subcategory, searchQuery, passengerNumbers]);
+  }, [orders, statusFilter, subcategory, searchQuery, passengerNumbers, selectedTags]);
 
   // Sorting & Pagination Logic
   const requestSort = (key: string) => {
@@ -387,15 +410,13 @@ export default function OrderManager() {
       </div>}
       {loading ? (
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>載入訂單資料中...</div>
-      ) : filteredOrders.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>目前沒有符合條件的訂單。</div>
       ) : (
         <div className="admin-table-container">
           <table className="admin-table order-table">
-            <colgroup><col style={{ width: '15%' }} /><col style={{ width: '28%' }} /><col style={{ width: '32%' }} /><col style={{ width: '17%' }} /><col style={{ width: '8%' }} /></colgroup>
+            <colgroup><col style={{ width: '15%' }} /><col style={{ width: '25%' }} /><col style={{ width: '28%' }} /><col style={{ width: '24%' }} /><col style={{ width: '8%' }} /></colgroup>
             <thead>
               <tr>
-                <th><button className="coupon-sort" onClick={() => requestSort('status')}>狀態 {getSortIcon('status')}</button><br /><button className="coupon-sort" data-syslog="order.sort.number" onClick={() => requestSort('readableId')}>訂單編號 {getSortIcon('readableId')}</button></th>
+                <th><button className="coupon-sort" onClick={() => requestSort('status')}>訂單狀態 {getSortIcon('status')}</button><br /><button className="coupon-sort" data-syslog="order.sort.number" onClick={() => requestSort('readableId')}>訂單編號 {getSortIcon('readableId')}</button></th>
                 <th><div className="passenger-heading">
                   <button data-syslog="order.sort.passengerName" onClick={() => requestSort('passengerName')}>乘客姓名{getSortIcon('passengerName')}</button>
                   <span>/</span>
@@ -408,7 +429,17 @@ export default function OrderManager() {
                   </div>
                 </th>
                 <th><button className="coupon-sort" onClick={() => requestSort('startAddress')}>上車地 {getSortIcon('startAddress')}</button><br /><button className="coupon-sort" data-syslog="order.sort.destination" onClick={() => requestSort('endAddress')}>目的地 {getSortIcon('endAddress')}</button></th>
-                <th><button className="coupon-sort" onClick={() => requestSort('updatedAt')}>紀錄時間 {getSortIcon('updatedAt')}</button></th>
+                <th>
+                  <button className="coupon-sort" onClick={() => requestSort('updatedAt')}>紀錄時間 {getSortIcon('updatedAt')}</button>
+                  <div className="order-tag-filters" role="group" aria-label="訂單特性篩選">
+                    {orderTags.map(tag => (
+                      <button key={tag.kind} type="button" data-kind={tag.kind} data-syslog={`order.tag.${tag.kind}`}
+                        aria-pressed={selectedTags.includes(tag)} onClick={() => toggleTag(tag.kind)}>
+                        {tag.label}
+                      </button>
+                    ))}
+                  </div>
+                </th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -436,7 +467,9 @@ export default function OrderManager() {
                   <td className="order-recorded-at">
                     <div className="order-cell-stack">
                       <span>{formatDate(order.updatedAt)}</span>
-                      <div className="order-tags"><span data-kind={order.isScheduled ? 'scheduled' : 'instant'}>{order.isScheduled ? '預約' : '即時'}</span>{order.couponId && <span data-kind="coupon">優惠券</span>}{order.isElderlyCare && <span data-kind="elderly">敬老服務</span>}</div>
+                      <div className="order-tags">
+                        {orderTags.filter(tag => tag.matches(order)).map(tag => <span key={tag.kind} data-kind={tag.kind}>{tag.label}</span>)}
+                      </div>
                     </div>
                   </td>
                   <td>
@@ -452,8 +485,10 @@ export default function OrderManager() {
             </tbody>
           </table>
 
-          <ListPagination totalItems={sortedOrders.length} currentPage={currentPage} itemsPerPage={itemsPerPage}
-            onPageChange={setCurrentPage} onPageSizeChange={setItemsPerPage} />
+          {sortedOrders.length === 0 ? (
+            <div role="status" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>目前沒有符合條件的訂單。</div>
+          ) : <ListPagination totalItems={sortedOrders.length} currentPage={currentPage} itemsPerPage={itemsPerPage}
+            onPageChange={setCurrentPage} onPageSizeChange={setItemsPerPage} />}
         </div>
       )}
         {detailId && <OrderDetail key={detailId} orderId={detailId} onClose={() => setDetailId(null)} />}

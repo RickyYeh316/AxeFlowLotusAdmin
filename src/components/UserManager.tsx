@@ -2,6 +2,7 @@
 
 import { useActionBarSelection } from './TabActionBar';
 
+import { AccountLoginHead, AccountLoginCells, compareNumbers, isLoginKey, loginValue } from './AccountLoginColumns';
 import ListPagination from './ListPagination';
 import ArchiveMemberDialog from './ArchiveMemberDialog';
 
@@ -18,6 +19,12 @@ import { User, UserTripStatus, UserAccountStatus, Order } from '../types';
 import { orderGroup, orderStatusText } from '../lib/orderPresentation';
 
 type PassengerCounts = { completedTripCount: number; cancelAfterAcceptCount: number; noShowCount: number };
+
+const countColumns = [
+  { key: 'completedTripCount', label: '完成搭乘' },
+  { key: 'cancelAfterAcceptCount', label: '棄單' },
+  { key: 'noShowCount', label: '未出現' },
+] as const;
 
 type CurrentOrder = Pick<Order, 'status' | 'reservationState' | 'userId'>;
 type CurrentOrderRead = { order: CurrentOrder | null; failed: boolean };
@@ -115,6 +122,8 @@ export default function UserManager() {
           currentOrderId: typeof data.currentOrderId === 'string' ? data.currentOrderId : undefined,
           accountStatus: parsedAccountStatus as UserAccountStatus,
           createdAt: data.createdAt,
+          lastLoginAt: data.lastLoginAt,
+          loginCount: data.loginCount,
           updatedAt: data.updatedAt
         });
       });
@@ -188,15 +197,6 @@ export default function UserManager() {
       count: users.length, enabled: !loadError && !countsError && !ordersError,
       ...(loadError || countsError || ordersError ? { reason: 'READ_FAILED' } : {}) });
   }, [loading, countsLoading, ordersLoading, loadError, countsError, ordersError, users.length]);
-
-  const formatDate = (timestamp: any) => {
-    if (!timestamp) return '未記錄';
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    if (!Number.isFinite(date.getTime())) return '未記錄';
-    return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Taipei', year: 'numeric',
-      month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
-      hourCycle: 'h23' }).format(date).replaceAll('-', '/');
-  };
 
   // Filtering States
   const [accountFilter, setAccountFilter] = useActionBarSelection<string>('category', 'ACTIVE');
@@ -273,17 +273,17 @@ export default function UserManager() {
   const sortedUsers = useMemo(() => {
     let sortable = [...filteredUsers];
     if (sortConfig !== null) {
+      const countKey = countColumns.find(column => column.key === sortConfig.key)?.key;
       sortable.sort((a: any, b: any) => {
+        if (countKey) return compareNumbers(counts[a.userId]?.[countKey], counts[b.userId]?.[countKey], sortConfig.direction);
+        if (isLoginKey(sortConfig.key)) {
+          return compareNumbers(loginValue(a, sortConfig.key), loginValue(b, sortConfig.key), sortConfig.direction);
+        }
         let aVal = a[sortConfig.key];
         let bVal = b[sortConfig.key];
         if (sortConfig.key === 'currentOrder') {
           aVal = currentOrderViews.get(a.userId)?.label || '';
           bVal = currentOrderViews.get(b.userId)?.label || '';
-        }
-
-        if (sortConfig.key === 'createdAt' || sortConfig.key === 'lastLoginAt') {
-          aVal = aVal?.toDate ? aVal.toDate().getTime() : new Date(aVal || 0).getTime();
-          bVal = bVal?.toDate ? bVal.toDate().getTime() : new Date(bVal || 0).getTime();
         }
 
         if (typeof aVal === 'string') {
@@ -298,7 +298,7 @@ export default function UserManager() {
       });
     }
     return sortable;
-  }, [filteredUsers, sortConfig, currentOrderViews]);
+  }, [filteredUsers, sortConfig, currentOrderViews, counts]);
 
   const totalPages = Math.ceil(sortedUsers.length / itemsPerPage);
   useEffect(() => { setCurrentPage(page => Math.min(page, Math.max(1, totalPages))); }, [totalPages]);
@@ -360,12 +360,15 @@ export default function UserManager() {
                   <span>/</span>
                   <button data-syslog="users.sort.number" onClick={() => requestSort('passengerNumber')}>編號{getSortIcon('passengerNumber')}</button>
                 </div></th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('accountStatus')}>帳號狀態 {getSortIcon('accountStatus')}</th>
                 <th><button className="coupon-sort" data-syslog="users.sort.currentOrder" onClick={() => requestSort('currentOrder')}>當前訂單 {getSortIcon('currentOrder')}</button></th>
-                <th className="passenger-count">完成搭乘</th>
-                <th className="passenger-count">棄單</th>
-                <th className="passenger-count">未出現</th>
-                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('createdAt')}>註冊時間 {getSortIcon('createdAt')}</th>
+                <th><div className="passenger-heading trip-count-heading">
+                  {countColumns.map(({ key, label }, index) => <React.Fragment key={key}>
+                    {index > 0 && <span aria-hidden="true">/</span>}
+                    <button type="button" data-syslog={`users.sort.${key}`} onClick={() => requestSort(key)}>{label}{getSortIcon(key)}</button>
+                  </React.Fragment>)}
+                </div></th>
+                <AccountLoginHead scope="users" onSort={requestSort} icon={getSortIcon} />
+                <th style={{ cursor: 'pointer' }} onClick={() => requestSort('accountStatus')}>帳號狀態 {getSortIcon('accountStatus')}</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -400,23 +403,21 @@ export default function UserManager() {
                         </div>
                       </div>
                     </td>
-                    <td>
-                      <span className={accClass}>
-                        {accText}
-                      </span>
-                    </td>
                     <td className="passenger-current-order">
                       {['serving', 'waiting', 'unknown'].includes(currentOrder.group)
                         ? <span className={`status-pill order-status order-tone-${currentOrder.group}`}>{currentOrder.label}</span>
                         : currentOrder.label}
                     </td>
-                    {(['completedTripCount', 'cancelAfterAcceptCount', 'noShowCount'] as const).map(key => (
-                      <td className="passenger-count" key={key}>
+                    <td><div className="trip-count-values">
+                      {countColumns.map(({ key, label }) => <span key={key} className="passenger-count" title={label}>
                         {countsLoading ? '…' : countsError ? '讀取失敗' : counts[user.userId]?.[key] ?? '—'}
-                      </td>
-                    ))}
-                    <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                      {formatDate(user.createdAt)}
+                      </span>)}
+                    </div></td>
+                    <AccountLoginCells account={user} />
+                    <td>
+                      <span className={accClass}>
+                        {accText}
+                      </span>
                     </td>
                     <td>
                       {user.accountStatus === UserAccountStatus.DELETED ? '—' : <div style={{ display: 'flex', gap: 8 }}>

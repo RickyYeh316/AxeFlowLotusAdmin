@@ -93,7 +93,7 @@ window.confirm=()=>false;window.alerts=[];window.alert=m=>alerts.push(m);window.
   if(init.headers.Authorization!=='Bearer fixture-token')throw Error('Missing token');
   countReads.push(body);
   if(countsFailure)return {ok:false,status:503,json:async()=>({error:'統計暫時無法讀取'})};
-  const result={items:body.userIds.map(id=>({userId:id,counts:id==='MEMBER-private-2'?null:{completedTripCount:id==='MEMBER-private-1'?0:20+countOffset,cancelAfterAcceptCount:id==='MEMBER-private-1'?0:5,noShowCount:id==='MEMBER-private-1'?0:1}}))};
+  const result={items:body.userIds.map(id=>({userId:id,counts:id==='MEMBER-private-2'?null:id==='MEMBER-private-3'?{completedTripCount:11,cancelAfterAcceptCount:7,noShowCount:0}:id==='MEMBER-private-4'?{completedTripCount:1,cancelAfterAcceptCount:2,noShowCount:10}:{completedTripCount:id==='MEMBER-private-1'?0:20+countOffset,cancelAfterAcceptCount:id==='MEMBER-private-1'?0:5,noShowCount:id==='MEMBER-private-1'?0:1}}))};
   if(holdCounts)await new Promise(resolve=>heldCounts.push(resolve));
   return {ok:true,status:200,json:async()=>result};
  }
@@ -196,10 +196,41 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     await fill('input.search-input','MEMBER-private');await wait(`document.querySelectorAll('tbody tr').length===0`);
     await fill('input.search-input','');await wait(`document.querySelectorAll('tbody tr').length===5`);
     await wait(`document.querySelector('tbody tr .passenger-count')?.textContent==='20'`);
-    assert.deepEqual(await run(`[...document.querySelectorAll('thead th')].map(el=>el.innerText.replaceAll('\\n','').trim())`),['乘客姓名/編號','帳號狀態','當前訂單','完成搭乘','棄單','未出現','註冊時間','操作']);
+    assert.deepEqual(await run(`[...document.querySelectorAll('thead th')].map(el=>el.innerText.replaceAll('\\n','').trim())`),['乘客姓名/編號','當前訂單','完成搭乘/棄單/未出現','註冊時間最近登入','登入次數','帳號狀態','操作']);
     assert.deepEqual(await run(`[...document.querySelectorAll('tbody tr')].slice(0,3).map(r=>[...r.querySelectorAll('.passenger-count')].map(c=>c.textContent))`),[['20','5','1'],['0','0','0'],['—','—','—']]);
     assert.equal(await run(`document.querySelector('tbody').innerText.includes('2026/11/13 08:00:00')`),true);
     assert.equal(await run(`document.body.innerText.includes('聯絡電話')||document.body.innerText.includes('棄單次數')`),false);
+    const verifyColumnSort = async (scope, key, selector, numeric) => {
+      const readCells = () => run(`[...document.querySelectorAll('tbody tr')].map(row=>row.querySelector('${selector}').textContent.trim())`);
+      const original = await readCells();
+      const known = original.filter(value=>value!=='—').sort((a,b)=>numeric?Number(a)-Number(b):a.localeCompare(b));
+      assert.ok(new Set(known).size>=2,key);
+      const missing = original.filter(value=>value==='—');
+      const button = `[data-syslog="${scope}.sort.${key}"]`;
+      for (const [icon,expected] of [['up',known],['down',[...known].reverse()]]) {
+        await run(`document.querySelector('${button}').click()`);
+        await wait(`!!document.querySelector('${button} .lucide-chevron-${icon}')`);
+        assert.deepEqual(await readCells(),[...expected,...missing],key+' '+icon);
+        assert.equal(await run(`document.querySelectorAll('thead svg').length`),1);
+      }
+    };
+    await run(`fixture.users.forEach(({data},i)=>{
+      if(i!==2) {
+        data.loginCount=[10,2,0,0,8][i];
+        data.lastLoginAt={toDate:()=>new Date(Date.UTC(2026,10,20-i))};
+        data.createdAt={toDate:()=>new Date(Date.UTC(2026,10,13+i))};
+      }
+    });reemitUsers()`);
+    await wait(`document.querySelector('tbody .passenger-count')?.textContent==='20'`);
+    for (const [index,key] of ['completedTripCount','cancelAfterAcceptCount','noShowCount'].entries())
+      await verifyColumnSort('users',key,'.trip-count-values span:nth-child('+(index+1)+')',true);
+    const verifyLoginSorts = async scope => {
+      await verifyColumnSort(scope,'createdAt','.account-times span:first-child',false);
+      await verifyColumnSort(scope,'lastLoginAt','.account-times span:last-child',false);
+      await verifyColumnSort(scope,'loginCount','td:nth-last-child(3)',true);
+    };
+    await verifyLoginSorts('users');
+    await run(`document.querySelector('[data-syslog="users.sort.name"]').click()`);
     await fill('input.search-input','0999000000');await wait(`document.querySelectorAll('tbody tr').length===0`);
     await fill('input.search-input','');await wait(`document.querySelectorAll('tbody tr').length===5`);
     await run(`document.querySelector('[data-syslog="users.sort.number"]').click()`);
@@ -371,14 +402,43 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     await run(`document.getAnimations().forEach(a=>a.finish())`);
     fs.writeFileSync(path.join(temp,'orders.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
     assert.equal(await run(`document.querySelectorAll('thead th').length`),5);
+    assert.equal(await run(`document.querySelector('thead th:first-child button').textContent.trim()`),'訂單狀態');
     assert.equal(await run(`['乘客編號：','車號司機：','上車地：','目的地：'].some(t=>document.querySelector('tbody').innerText.includes(t))`),false);
     assert.deepEqual(await run(`[...document.querySelectorAll('tbody a.order-map-link')].map(a=>({href:a.href,target:a.target,rel:a.rel}))`),[
       {href:'https://www.google.com/maps/search/?api=1&query=23.991%2C121.601',target:'_blank',rel:'noopener noreferrer'},
       {href:'https://www.google.com/maps/search/?api=1&query=24.01%2C121.62',target:'_blank',rel:'noopener noreferrer'}
     ]);
     assert.equal(await run(`document.querySelector('[data-log-order="order-private-0"] .order-recorded-at .order-tags').innerText`),'即時');
-    assert.equal(await run(`document.querySelector('[data-log-order="order-private-1"] .order-recorded-at .order-tags').innerText.replaceAll('\\n',' ')`),'預約 優惠券 敬老服務');
+    assert.equal(await run(`document.querySelector('[data-log-order="order-private-1"] .order-recorded-at .order-tags').innerText.replaceAll('\\n',' ')`),'預約 優惠券 敬老');
     assert.equal(await run(`document.querySelectorAll('tbody td:nth-child(2) .order-tags').length`),0);
+    const tagButtons = '.order-tag-filters button';
+    assert.deepEqual(await run(`[...document.querySelectorAll('${tagButtons}')].map(b=>[b.textContent.trim(),b.getAttribute('aria-pressed')])`),
+      ['即時','預約','優惠券','敬老'].map(label=>[label,'false']));
+    for (const width of [390,1440]) {
+      await send('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:false});
+      assert.equal(await run(`['.order-tag-filters','[data-log-order="order-private-1"] .order-tags'].every(selector=>{
+        const group=document.querySelector(selector);
+        const cells=[...group.children].map(el=>el.getBoundingClientRect());
+        return cells.every(cell=>cell.top===cells[0].top) && cells.at(-1).right<=group.closest('th,td').getBoundingClientRect().right;
+      })`),true);
+    }
+    const toggleOrderTag = async (kind, expected) => {
+      await run(`document.querySelector('[data-syslog="order.tag.${kind}"]').click()`);
+      await wait(`document.querySelectorAll('tbody tr[data-log-order]').length===${expected}`);
+    };
+    await run(`fixture.orders[2].data.couponId='coupon-2';fixture.orders[3].data.isElderlyCare=true;reemitOrders()`);
+    await wait(`document.querySelectorAll('tbody [data-kind="coupon"]').length===2`);
+    await toggleOrderTag('coupon',2);
+    await toggleOrderTag('elderly',1);
+    await toggleOrderTag('instant',0);
+    await wait(`document.body.innerText.includes('目前沒有符合條件的訂單')`);
+    await toggleOrderTag('scheduled',1);
+    assert.equal(await run(`document.querySelector('[data-syslog="order.tag.instant"]').getAttribute('aria-pressed')`),'false');
+    await toggleOrderTag('scheduled',1);
+    await toggleOrderTag('coupon',2);
+    await toggleOrderTag('elderly',5);
+    await run(`delete fixture.orders[2].data.couponId;delete fixture.orders[3].data.isElderlyCare;reemitOrders()`);
+    await wait(`document.querySelectorAll('tbody [data-kind="coupon"]').length===1`);
     // 攔截導頁，只驗證真實連結點擊的 sysLog，不開外部地圖。
     await run(`document.querySelector('a.order-map-link').addEventListener('click',e=>e.preventDefault());document.querySelector('a.order-map-link').click()`);
 
@@ -648,9 +708,19 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
       {id:'b',data:{name:'C',carPlate:'AAA',avatar:'/missing-avatar.png',carColor:'水泥灰'}},
       {id:'a',data:{name:'D',plateNumber:'BBB',avatar:'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',carColor:'銀色'}}
     ];showView('drivers')`);
+    await wait(`document.querySelector('[data-syslog="drivers.filter.ACTIVE"]')?.getAttribute('aria-pressed')==='true'`);
+    await run(`document.querySelector('[data-syslog="drivers.filter.ALL"]').click()`);
     await wait(`document.querySelectorAll('tbody tr').length===4 && document.querySelectorAll('tbody img[src="/passenger-avatar-default.svg"]').length===3`);
-    assert.equal(await run(`document.querySelector('thead th:nth-child(5)').textContent.trim()`),'勤務狀態');
-    const dutySelector = "document.querySelector('tbody tr:first-child .driver-duty')";
+    assert.equal(await run(`document.querySelector('thead th:first-child').textContent.trim()`),'勤務狀態');
+    await run(`fixture.drivers.slice(0,3).forEach(({data},i)=>{
+      data.createdAt={toDate:()=>new Date(Date.UTC(2026,10,10+i))};
+      data.lastLoginAt={toDate:()=>new Date(Date.UTC(2026,10,20-i))};
+      data.loginCount=[10,2,0][i];
+    });reemitDrivers()`);
+    await wait(`document.querySelector('tbody tr td:nth-last-child(3)').textContent==='10'`);
+    await verifyLoginSorts('drivers');
+    await run(`[...document.querySelectorAll('thead button')].find(b=>b.textContent==='司機').click()`);
+    const dutySelector = "document.querySelector('tbody tr:first-child td:first-child .driver-duty')";
     const gray = 'rgb(129, 147, 171)', red = 'rgb(255, 119, 124)', green = 'rgb(102, 178, 146)';
     for (const [fields, label, color] of [
       [{tripStatus:'OFFLINE'}, '下線', gray],
@@ -682,7 +752,7 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     await wait(`document.querySelectorAll('tbody tr').length===13 && document.querySelector('[aria-current="page"]').textContent==='1'`);
     await run(`fixture.drivers.splice(4);reemitDrivers()`);
     await wait(`document.querySelectorAll('tbody tr').length===4`);
-    assert.deepEqual(await run(`[...document.querySelectorAll('tbody td:nth-child(3)')].map(td=>td.textContent)`),
+    assert.deepEqual(await run(`[...document.querySelectorAll('tbody td:nth-child(4)')].map(td=>td.textContent)`),
       ['', 'TOYOTA RAV4', '', '']);
     assert.equal(await run(`document.querySelector('tbody .order-plate')?.textContent`),'ZZZ');
     assert.equal(await run(`document.querySelectorAll('tbody .order-plate').length`),3);
@@ -694,7 +764,7 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
       Object.assign(fixture.drivers[3].data,{accountStatus:'ARCHIVED'});reemitDrivers()`);
     await wait(`document.querySelector('[data-syslog="drivers.filter.SUSPENDED"]').textContent==='停用 (2)'`);
     await run(`window.confirm=()=>true;document.querySelector('[data-syslog="drivers.filter.ARCHIVED"]').click()`);
-    await wait(`document.querySelectorAll('tbody tr').length===1 && document.querySelector('tbody .status-pill').textContent==='已封存'`);
+    await wait(`document.querySelectorAll('tbody tr').length===1 && document.querySelector('tbody td:nth-last-child(2) .status-pill').textContent==='已封存'`);
     await run(`document.querySelector('[data-syslog="drivers.status.SUSPENDED"]').click()`);
     await wait(`document.querySelector('[data-syslog="drivers.filter.SUSPENDED"]').textContent==='停用 (3)'`);
     await run(`document.querySelector('[data-syslog="drivers.filter.SUSPENDED"]').click()`);
@@ -767,7 +837,7 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     assert.deepEqual(await run(`[driverEdits[1].carPlate,driverEdits[1].plateNumber,driverEdits[1].name,driverEdits[1].carMaker,driverEdits[1].carModel]`),
       ['ABC-1234','ABC-1234','新司機','Tesla','Model Y']);
     await fill('input[placeholder^="搜尋司機"]','ABC-1234');
-    await wait(`document.querySelector('tbody td:nth-child(3)')?.textContent==='Tesla Model Y'`);
+    await wait(`document.querySelector('tbody td:nth-child(4)')?.textContent==='Tesla Model Y'`);
     assert.equal(await run(`[...document.querySelectorAll('button')].some(b=>b.textContent.includes('註冊新司機'))`),false);
     assert.equal(await run(`document.querySelector('[data-syslog="drivers.edit"]').textContent.trim()`),'編輯');
     console.log('PASS: 司機列表編輯文字按鈕、封存雙向恢復、手機欄位焦點穩定。');
@@ -786,7 +856,7 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
     // Exercise the actual sidebar and workspace tabs with all five list components.
     await run(`showWorkspace()`);
     const pages = [
-      ['司機管理','drivers.filter','SUSPENDED','ALL'],
+      ['司機管理','drivers.filter','SUSPENDED','ACTIVE'],
       ['乘客管理','users.filter','BANNED','ACTIVE'],
       ['訂單管理','order.filter','closed','serving'],
       ['優惠券管理','coupon.filter','invalid','valid'],
@@ -805,7 +875,10 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
       await pressed(group,initial);
       await clickReady(control(group,value));
       await pressed(group,value);
-      if (group==='order.filter') await fill('.order-subcategory','COMPLETED');
+      if (group==='order.filter') {
+        await fill('.order-subcategory','COMPLETED');
+        await clickReady(control('order.tag','coupon'));
+      }
       if (group==='settlement.filter') {
         await wait(`!!document.querySelector('.order-subcategory option[value="cab"]')`);
         await fill('.order-subcategory','cab');
@@ -815,7 +888,10 @@ window.fixture={users:numbers.map((number,i)=>({id:'MEMBER-private-'+i,data:{pas
       for (const [label,group,value] of pages) {
         await clickReady(nav + '[title="' + label + '"]');
         await pressed(group,value);
-        if (group==='order.filter') await wait(`document.querySelector('.order-subcategory').value==='COMPLETED'`);
+        if (group==='order.filter') {
+          await wait(`document.querySelector('.order-subcategory').value==='COMPLETED'`);
+          await pressed('order.tag','coupon');
+        }
         if (group==='settlement.filter') await wait(`document.querySelector('.order-subcategory').value==='cab'`);
       }
     }

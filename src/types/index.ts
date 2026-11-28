@@ -82,6 +82,7 @@ export interface Driver {
   working?: boolean;
   isWorking?: boolean;
   loginCount?: number;
+  lastLoginAt?: Timestamp;
 }
 
 export interface User {
@@ -98,6 +99,7 @@ export interface User {
   pictureUrl?: string;
   statusMessage?: string;
   role?: string;
+  loginCount?: number;
   lastLoginAt?: Timestamp;
 }
 

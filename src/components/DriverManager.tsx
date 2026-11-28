@@ -1,5 +1,6 @@
 'use client';
 
+import { AccountLoginHead, AccountLoginCells, compareNumbers, isLoginKey, loginValue } from './AccountLoginColumns';
 import ListPagination from './ListPagination';
 import { useActionBarSelection } from './TabActionBar';
 
@@ -107,6 +108,8 @@ export default function DriverManager() {
           working: duty.tripStatus === DriverTripStatus.IDLE,
           isWorking: duty.tripStatus === DriverTripStatus.IN_SERVICE,
           createdAt: data.createdAt,
+          lastLoginAt: data.lastLoginAt,
+          loginCount: data.loginCount,
           updatedAt: data.updatedAt
         });
       });
@@ -143,7 +146,7 @@ export default function DriverManager() {
 
   // Filtering States
   const [searchQuery, setSearchQuery] = useState('');
-  const [accountFilter, setAccountFilter] = useActionBarSelection<string>('category', 'ALL');
+  const [accountFilter, setAccountFilter] = useActionBarSelection<string>('category', DriverAccountStatus.ACTIVE);
 
   // Filtering & Sorting Logic
   const filteredDrivers = useMemo(() => {
@@ -160,6 +163,9 @@ export default function DriverManager() {
     let sortable = [...filteredDrivers];
     if (sortConfig !== null) {
       sortable.sort((a: any, b: any) => {
+        if (isLoginKey(sortConfig.key)) {
+          return compareNumbers(loginValue(a, sortConfig.key), loginValue(b, sortConfig.key), sortConfig.direction);
+        }
         let aVal = a[sortConfig.key];
         let bVal = b[sortConfig.key];
 
@@ -300,6 +306,7 @@ export default function DriverManager() {
               <table className="admin-table">
                 <thead>
                   <tr>
+                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('tripStatus')}>勤務狀態 {getSortIcon('tripStatus')}</th>
                     <th>
                       <div className="passenger-heading">
                         <button onClick={() => requestSort('email')}>帳號{getSortIcon('email')}</button>
@@ -312,14 +319,17 @@ export default function DriverManager() {
                     </th>
                     <th style={{ cursor: 'pointer' }} onClick={() => requestSort('phone')}>手機 {getSortIcon('phone')}</th>
                     <th style={{ cursor: 'pointer' }} onClick={() => requestSort('carMaker')}>車款 {getSortIcon('carMaker')}</th>
+                    <AccountLoginHead scope="drivers" onSort={requestSort} icon={getSortIcon} />
                     <th style={{ cursor: 'pointer' }} onClick={() => requestSort('accountStatus')}>帳號狀態 {getSortIcon('accountStatus')}</th>
-                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('tripStatus')}>勤務狀態 {getSortIcon('tripStatus')}</th>
                     <th>操作</th>
                   </tr>
                 </thead>
             <tbody>
               {paginatedDrivers.map((driver) => (
                 <tr key={driver.email}>
+                  <td>
+                    <DriverDutyBadge driver={driver} />
+                  </td>
                   <td>
                     <div className="passenger-identity">
                       <DriverAvatar avatar={driver.avatar} />
@@ -336,13 +346,11 @@ export default function DriverManager() {
                   <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                     {vehicleLabel(driver)}
                   </td>
+                  <AccountLoginCells account={driver} />
                   <td>
                     <span className={driver.accountStatus === DriverAccountStatus.ACTIVE ? 'status-pill online' : 'status-pill offline'}>
                       {getDriverAccountStatusText(driver)}
                     </span>
-                  </td>
-                  <td>
-                    <DriverDutyBadge driver={driver} />
                   </td>
                   <td>
                     <div className="action-btn-row">

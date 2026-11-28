@@ -1393,7 +1393,7 @@ body.modal-open .workspace-tabs-bar {
 
 /* 訂單列表：沿 AOS 的欄位名稱與兩行資訊順序。 */
 .order-search { width: min(100%, 760px); }
-.order-table { min-width: 1060px; table-layout: fixed; }
+.order-table { min-width: max(1060px, 66.25rem); table-layout: fixed; }
 .order-table th, .order-table td { padding: 18px 16px; overflow-wrap: anywhere; }
 .order-table th { line-height: 1.9; }
 .order-cell-stack { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
@@ -1402,7 +1402,15 @@ body.modal-open .workspace-tabs-bar {
 .order-passenger, .order-driver { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .order-passenger-number { color: var(--text-secondary); font-size: 0.8rem; }
 .order-plate { display: inline-block; background: #fff; color: #bd2436; border: 1px solid #c7cbd0; border-radius: 4px; padding: 2px 8px; font: 700 0.85rem monospace; letter-spacing: 0.04em; }
-.order-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.order-tags, .order-tag-filters { display: flex; gap: 4px; white-space: nowrap; }
+.order-tags { gap: 6px; }
+.order-tag-filters { margin-top: 4px; }
+.order-tag-filters button {
+  color: var(--tag-color); background: transparent; border: 1px solid currentColor; border-radius: 6px;
+  font: inherit; font-size: .75rem; line-height: 1.5; padding: 3px 7px; cursor: pointer;
+}
+.order-tag-filters button:hover, .order-tag-filters button:focus-visible { outline: 2px solid var(--tag-color); outline-offset: 1px; }
+.order-tag-filters button[aria-pressed="true"] { background: var(--tag-color); border-color: var(--tag-color); color: #10151e; }
 .order-tags span { color: var(--text-secondary); border: 1px solid var(--border-color-hover); border-radius: 4px; padding: 2px 6px; font-size: 0.7rem; }
 .order-address { width: 100%; display: flex; align-items: baseline; gap: 8px; line-height: 1.6; }
 .order-location-dot { color: #ffd84d; flex: 0 0 12px; font-size: 0.7rem; }
@@ -1415,9 +1423,13 @@ body.modal-open .workspace-tabs-bar {
 .order-map-link:hover { color: #c9e2ff; }
 
 /* 訂單 v3：輕量特性標籤與單一詳情容器。 */
+.order-tag-filters [data-kind="instant"] { --tag-color: #9dc9ec; }
 .order-tags [data-kind="instant"] {color:#9dc9ec;border-color:#9dc9ec40;background:#9dc9ec0a}
+.order-tag-filters [data-kind="scheduled"] { --tag-color: #c2ade6; }
 .order-tags [data-kind="scheduled"] {color:#c2ade6;border-color:#c2ade640;background:#c2ade60a}
+.order-tag-filters [data-kind="coupon"] { --tag-color: #d8be81; }
 .order-tags [data-kind="coupon"] {color:#d8be81;border-color:#d8be8140;background:#d8be810a}
+.order-tag-filters [data-kind="elderly"] { --tag-color: #9ac8ad; }
 .order-tags [data-kind="elderly"] {color:#9ac8ad;border-color:#9ac8ad40;background:#9ac8ad0a}
 .table-action-button {white-space:nowrap;padding:8px 10px;font-size:.8rem;min-height:40px}
 .table-action-button:disabled {opacity:.5;cursor:not-allowed}
@@ -1463,6 +1475,11 @@ body.modal-open .workspace-tabs-bar {
 .passenger-name-number { flex-wrap: wrap; }
 .passenger-name { font-weight: 700; overflow-wrap: anywhere; }
 .passenger-number { color: var(--text-secondary); font-size: .85rem; font-family: monospace; white-space: nowrap; }
+.account-times { display: grid; justify-items: start; gap: 4px; white-space: nowrap; }
+td .account-times { color: var(--text-secondary); font-size: .8rem; font-variant-numeric: tabular-nums; }
+.trip-count-heading, .trip-count-values { justify-content: center; white-space: nowrap; }
+.trip-count-values { display: flex; gap: .75em; }
+.trip-count-values span { min-width: 2ch; }
 .passenger-sheet .passenger-count { text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .passenger-read-error { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; color: var(--color-danger); }
 
