@@ -9,7 +9,8 @@ import { db } from '../firebase/config';
 import { collection, onSnapshot, doc, updateDoc } from '../lib/loggedFirestore';
 import { Search, RefreshCw, X, Check, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react';
 import { DriverTripStatus, DriverAccountStatus } from '../types';
-import { dutyBadges, readDutyStatus, type DriverRow } from '../lib/driverDuty';
+import DriverDutyBadge from './DriverDutyBadge';
+import { readDriverDuty, type DriverRow } from '../lib/driverDuty';
 import DriverAvatar from './DriverAvatar';
 
 const categories = [
@@ -77,7 +78,7 @@ export default function DriverManager() {
       snapshot.forEach((doc) => {
         const data = doc.data();
         
-        const parsedTripStatus = readDutyStatus(data.tripStatus, data.status);
+        const duty = readDriverDuty(data.tripStatus, data.status, data.presenceStatus);
         let parsedAccountStatus = data.accountStatus;
         if (parsedAccountStatus == null) {
           if (data.status === 'WAIT_APPROVAL') {
@@ -101,10 +102,10 @@ export default function DriverManager() {
           carMaker: data.carMaker || '',
           carModel: data.carModel || '',
           avatar: data.avatar,
-          tripStatus: parsedTripStatus,
+          ...duty,
           accountStatus: parsedAccountStatus as DriverAccountStatus,
-          working: parsedTripStatus === DriverTripStatus.IDLE,
-          isWorking: parsedTripStatus === DriverTripStatus.IN_SERVICE,
+          working: duty.tripStatus === DriverTripStatus.IDLE,
+          isWorking: duty.tripStatus === DriverTripStatus.IN_SERVICE,
           createdAt: data.createdAt,
           updatedAt: data.updatedAt
         });
@@ -341,9 +342,7 @@ export default function DriverManager() {
                     </span>
                   </td>
                   <td>
-                    <span className={`status-pill driver-duty ${dutyBadges[driver.tripStatus].tone}`}>
-                      {dutyBadges[driver.tripStatus].label}
-                    </span>
+                    <DriverDutyBadge driver={driver} />
                   </td>
                   <td>
                     <div className="action-btn-row">

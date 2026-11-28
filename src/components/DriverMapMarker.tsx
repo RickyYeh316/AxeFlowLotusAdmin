@@ -1,9 +1,9 @@
-import { dutyBadges, type DriverRow } from '../lib/driverDuty';
+import { dutyBadges, dutyLabel, type DriverRow } from '../lib/driverDuty';
 import type { LocationData } from '../types';
 import DriverAvatar from './DriverAvatar';
 
 export type MapDriver = Pick<DriverRow,
-  'email' | 'name' | 'plateNumber' | 'avatar' | 'tripStatus'
+  'email' | 'name' | 'plateNumber' | 'avatar' | 'tripStatus' | 'disconnectedDuringOrder'
 > & { currentLocation: LocationData };
 
 export default function DriverMapMarker({ driver, selected, mapHeading = 0 }: {
@@ -19,7 +19,7 @@ export default function DriverMapMarker({ driver, selected, mapHeading = 0 }: {
         <DriverAvatar avatar={driver.avatar} />
         <span aria-hidden="true" className="duty-marker-ring" style={{ transform: `rotate(${angle}deg)` }} />
       </span>
-      <span className="duty-marker-label">{driver.plateNumber} · {badge.label}</span>
+      <span className="duty-marker-label">{driver.plateNumber} · {dutyLabel(driver)}</span>
     </span>
   );
 }

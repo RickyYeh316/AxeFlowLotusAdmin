@@ -4,9 +4,12 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { DriverTripStatus } from '../types';
 import { db } from '../firebase/config';
 import { collection, onSnapshot } from '../lib/loggedFirestore';
-import { APIProvider, Map, useMap, AdvancedMarker } from '@vis.gl/react-google-maps';
-import { mapStyles } from '../data/mapStyles';
-import { dutyBadges, readDutyStatus } from '../lib/driverDuty';
+import { APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
+import DutyMapOverlay from './DutyMapOverlay';
+import { mapStyles, mapStyleLabels, type DutyMapStyle } from '../data/mapStyles';
+import { readMapCamera, readMapStyle, saveMapCamera, saveMapStyle, type MapCamera } from '../data/dutyMapPreferences';
+import DriverDutyBadge from './DriverDutyBadge';
+import { dutyLabel, readDriverDuty } from '../lib/driverDuty';
 import DriverMapMarker, { type MapDriver } from './DriverMapMarker';
 import DriverMapCluster, { groupMapDrivers, projectMapPosition, type DriverMapGroup } from './DriverMapCluster';
 import DriverAvatar from './DriverAvatar';
@@ -32,9 +35,32 @@ const MapController: React.FC<{
   focusPosition: google.maps.LatLngLiteral | null;
   zoomToDriver: boolean;
   showTraffic: boolean;
-}> = ({ focusPosition, zoomToDriver, showTraffic }) => {
+  active: boolean;
+}> = ({ focusPosition, zoomToDriver, showTraffic, active }) => {
   const map = useMap();
   const trafficLayerRef = useRef<google.maps.TrafficLayer | null>(null);
+
+  useEffect(() => {
+    if (!map || !active) return;
+    let pending: MapCamera | null = null;
+    const capture = map.addListener('bounds_changed', () => {
+      const center = map.getCenter();
+      const zoom = map.getZoom();
+      if (center && zoom !== undefined) pending = { center: center.toJSON(), zoom };
+    });
+    function flush() {
+      if (pending) saveMapCamera('google', pending);
+      pending = null;
+    }
+    const idle = map.addListener('idle', flush);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      capture.remove();
+      idle.remove();
+      window.removeEventListener('pagehide', flush);
+      flush();
+    };
+  }, [map, active]);
 
   useEffect(() => {
     if (!map || !focusPosition) return;
@@ -69,11 +95,12 @@ export default function DispatchMap({ apiKey, active = true }: DispatchMapProps)
   const [selection, setSelection] = useState<{ email: string; position: google.maps.LatLngLiteral; zoomToDriver: boolean } | null>(null);
   const selectedDriver = drivers.find(driver => driver.email === selection?.email && driver.tripStatus !== DriverTripStatus.OFFLINE) ?? null;
 
-  const [mapZoom, setMapZoom] = useState(13);
+  const [initialCamera] = useState(() => readMapCamera('google') ?? { center: { lat: 25.0412, lng: 121.5645 }, zoom: 13 });
+  const [mapZoom, setMapZoom] = useState(initialCamera.zoom);
   const [previewGroup, setPreviewGroup] = useState<string | null>(null);
   const groups = useMemo(() => groupMapDrivers(drivers, pos => projectMapPosition(pos, mapZoom)), [drivers, mapZoom]);
   const [mapHeading, setMapHeading] = useState(0);
-  const [mapStyle, setMapStyle] = useState<'standard' | 'dark' | 'retro' | 'cool-blue'>('dark');
+  const [mapStyle, setMapStyle] = useState(readMapStyle);
   const [showTraffic, setShowTraffic] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -121,7 +148,7 @@ export default function DispatchMap({ apiKey, active = true }: DispatchMapProps)
           name: data.name || '未命名司機',
           plateNumber,
           avatar: data.avatar,
-          tripStatus: readDutyStatus(data.tripStatus, data.status),
+          ...readDriverDuty(data.tripStatus, data.status, data.presenceStatus),
           currentLocation: {
             lat: location.lat,
             lng: location.lng,
@@ -162,18 +189,7 @@ export default function DispatchMap({ apiKey, active = true }: DispatchMapProps)
     };
   }, [active]);
 
-  // Center of Taipei
-  const defaultCenter = { lat: 25.0412, lng: 121.5645 };
-  const defaultZoom = 13;
-
   const hasValidKey = apiKey && apiKey.startsWith('AIzaSy');
-
-  const mapStyleLabels = {
-    standard: '標準地圖',
-    dark: '暗黑太空',
-    retro: '復古暖金',
-    'cool-blue': '酷炫湛藍'
-  };
 
   return (
     <div className="map-page-container" inert={!active}>
@@ -182,12 +198,11 @@ export default function DispatchMap({ apiKey, active = true }: DispatchMapProps)
         <APIProvider apiKey={apiKey}>
           <div className="full-map">
             <Map
-              defaultCenter={defaultCenter}
-              defaultZoom={defaultZoom}
+              defaultCenter={initialCamera.center}
+              defaultZoom={initialCamera.zoom}
               gestureHandling={'greedy'}
               disableDefaultUI={true}
               styles={mapStyles[mapStyle]}
-              mapId="LOTUS_ADMIN_MAP"
               onZoomChanged={event => setMapZoom(event.detail.zoom)}
               onHeadingChanged={event => setMapHeading(event.detail.heading)}
             >
@@ -196,33 +211,28 @@ export default function DispatchMap({ apiKey, active = true }: DispatchMapProps)
                 if (members.length > 1) {
                   const expanded = isGroupExpanded(group);
                   return (
-                    <AdvancedMarker key={id} position={position} anchorLeft="-50%" anchorTop="-50%"
-                      clickable zIndex={expanded ? 3 : 2}>
+                    <DutyMapOverlay key={id} position={position} cluster zIndex={expanded ? 3 : 2}>
                       <DriverMapCluster members={members} selectedEmail={selectedDriver?.email} mapHeading={mapHeading}
                         expanded={expanded} onToggle={() => toggleGroup(group)} onSelect={selectDriver} />
-                    </AdvancedMarker>
+                    </DutyMapOverlay>
                   );
                 }
                 const driver = members[0];
                 const isSelected = selectedDriver?.email === driver.email;
                 const loc = driver.currentLocation;
                 return (
-                  <AdvancedMarker
-                    key={driver.email}
-                    position={{ lat: loc.lat, lng: loc.lng }}
-                    anchorLeft="-50%"
-                    anchorTop="-22px"
-                    title={`${driver.name} · ${driver.plateNumber} · ${dutyBadges[driver.tripStatus].label}`}
-                    zIndex={isSelected ? 1 : 0}
-                    onClick={() => selectDriver(driver)}
-                  >
-                    <DriverMapMarker driver={driver} selected={isSelected} mapHeading={mapHeading} />
-                  </AdvancedMarker>
+                  <DutyMapOverlay key={driver.email} position={loc} zIndex={isSelected ? 1 : 0}>
+                    <button type="button" className="duty-map-pin" aria-pressed={isSelected}
+                      title={`${driver.name} · ${driver.plateNumber} · ${dutyLabel(driver)}`}
+                      onClick={() => selectDriver(driver)}>
+                      <DriverMapMarker driver={driver} selected={isSelected} mapHeading={mapHeading} />
+                    </button>
+                  </DutyMapOverlay>
                 );
               })}
 
               <MapController focusPosition={selection?.position ?? null} zoomToDriver={selection?.zoomToDriver ?? false}
-                showTraffic={active && showTraffic} />
+                active={active} showTraffic={active && showTraffic} />
             </Map>
           </div>
         </APIProvider>
@@ -253,9 +263,13 @@ export default function DispatchMap({ apiKey, active = true }: DispatchMapProps)
         {/* Style Selector */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <Layers size={14} className="text-cyan" />
-          <select 
-            value={mapStyle} 
-            onChange={(e) => setMapStyle(e.target.value as any)}
+          <select aria-label="底圖樣式"
+            value={mapStyle}
+            onChange={(e) => {
+              const style = e.target.value as DutyMapStyle;
+              setMapStyle(style);
+              saveMapStyle(style);
+            }}
             style={{
               background: 'transparent',
               border: 'none',
@@ -281,7 +295,7 @@ export default function DispatchMap({ apiKey, active = true }: DispatchMapProps)
             style={{
               background: 'transparent',
               border: 'none',
-              color: showTraffic ? 'var(--color-secondary)' : 'var(--text-secondary)',
+              color: showTraffic ? '#16e098' : 'var(--text-secondary)',
               fontSize: '0.8rem',
               fontWeight: 600,
               cursor: 'pointer',
@@ -290,7 +304,7 @@ export default function DispatchMap({ apiKey, active = true }: DispatchMapProps)
               gap: 6
             }}
           >
-            <TrafficCone size={14} className={showTraffic ? 'text-cyan' : ''} />
+            <TrafficCone size={14} />
             <span>即時路況: {showTraffic ? '開啟' : '關閉'}</span>
           </button>
         )}
@@ -313,18 +327,17 @@ export default function DispatchMap({ apiKey, active = true }: DispatchMapProps)
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {drivers.map((driver) => {
               const isSelected = selectedDriver?.email === driver.email;
-              const badge = dutyBadges[driver.tripStatus];
 
               return (
                 <div key={driver.email} className={`driver-map-item ${isSelected ? 'selected' : ''}`}>
                   <button type="button" className="driver-map-pick" aria-pressed={isSelected}
-                    aria-label={`${driver.name} · ${driver.plateNumber} · ${badge.label}`}
+                    aria-label={`${driver.name} · ${driver.plateNumber} · ${dutyLabel(driver)}`}
                     onClick={() => selectDriver(driver, true)} />
                   <DriverAvatar avatar={driver.avatar} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />
                   <span style={{ flexGrow: 1, minWidth: 0 }}>
                     <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{driver.name}</span>
-                      <span className={`status-pill driver-duty ${badge.tone}`}>{badge.label}</span>
+                      <DriverDutyBadge driver={driver} />
                     </span>
                     <span className="driver-map-meta">
                       <CopyableMapValue label="車牌" value={driver.plateNumber} />

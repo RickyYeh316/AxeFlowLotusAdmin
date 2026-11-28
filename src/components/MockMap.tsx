@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useEffectEvent, useRef } from 'react';
+import React, { useState, useEffect, useEffectEvent, useLayoutEffect, useRef } from 'react';
+import type { DutyMapStyle } from '../data/mapStyles';
+import { readMapCamera, saveMapCamera } from '../data/dutyMapPreferences';
 import DriverMapMarker, { type MapDriver } from './DriverMapMarker';
 import DriverMapCluster, { groupMapDrivers, type DriverMapGroup } from './DriverMapCluster';
 import { ZoomIn, ZoomOut, Info } from 'lucide-react';
@@ -13,7 +15,7 @@ interface MockMapProps {
   isGroupExpanded: (group: DriverMapGroup) => boolean;
   onToggleGroup: (group: DriverMapGroup) => void;
   onSelectLocation: (location: MapDriver) => void;
-  mapStyle: 'standard' | 'dark' | 'retro' | 'cool-blue';
+  mapStyle: DutyMapStyle;
 }
 
 export const MockMap: React.FC<MockMapProps> = ({
@@ -61,7 +63,28 @@ export const MockMap: React.FC<MockMapProps> = ({
     const scale = zoomToDriver ? 1.3 : zoom;
     setPan({ x: rect.width / 2 - x * scale, y: rect.height / 2 - y * scale });
     if (zoomToDriver) setZoom(scale);
+    saveMapCamera('svg', { center: position, zoom: scale });
   });
+
+  useLayoutEffect(() => {
+    const camera = readMapCamera('svg');
+    const rect = mapRef.current?.getBoundingClientRect();
+    if (!camera || !rect) return;
+    const { x, y } = projectCoord(camera.center.lat, camera.center.lng);
+    setZoom(camera.zoom);
+    setPan({ x: rect.width / 2 - x * camera.zoom, y: rect.height / 2 - y * camera.zoom });
+  }, []);
+
+  function saveViewport(scale: number) {
+    const rect = mapRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = (rect.width / 2 - pan.x) / scale;
+    const y = (rect.height / 2 - pan.y) / scale;
+    saveMapCamera('svg', {
+      center: { lat: maxLat - y / 1000 * (maxLat - minLat), lng: minLng + x / 1000 * (maxLng - minLng) },
+      zoom: scale
+    });
+  }
 
   useEffect(() => {
     if (focusPosition) centerOnDriver(focusPosition, zoomToDriver);
@@ -82,11 +105,14 @@ export const MockMap: React.FC<MockMapProps> = ({
   };
 
   const handleMouseUp = () => {
+    if (isDragging) saveViewport(zoom);
     setIsDragging(false);
   };
 
   const handleZoom = (factor: number) => {
-    setZoom(prev => Math.max(0.5, Math.min(3, prev * factor)));
+    const scale = Math.max(0.5, Math.min(3, zoom * factor));
+    setZoom(scale);
+    saveViewport(scale);
   };
 
   // Styling properties based on active mapStyle
@@ -99,21 +125,13 @@ export const MockMap: React.FC<MockMapProps> = ({
       roads: '#22273d',
       label: '#4f5b84',
     },
-    'cool-blue': {
-      bg: '#050c1e',
-      grid: '#0d1d3d',
-      river: '#061730',
-      riverGlow: '#00ddff',
-      roads: '#142a54',
-      label: '#5c78ad',
-    },
-    retro: {
-      bg: '#fcf8ee',
-      grid: '#ede4ce',
-      river: '#c2e0f4',
-      riverGlow: '#85c1e9',
-      roads: '#fff',
-      label: '#8d8268',
+    grayscale: {
+      bg: '#eeeeee',
+      grid: '#d4d4d4',
+      river: '#cccccc',
+      riverGlow: '#cccccc',
+      roads: '#ffffff',
+      label: '#666666',
     },
     standard: {
       bg: '#f1f3f4',
@@ -125,7 +143,7 @@ export const MockMap: React.FC<MockMapProps> = ({
     }
   };
 
-  const theme = themes[mapStyle] || themes.dark;
+  const theme = themes[mapStyle];
 
   return (
     <div 
@@ -159,7 +177,7 @@ export const MockMap: React.FC<MockMapProps> = ({
           pointerEvents: 'auto',
           fontSize: '0.8rem',
           maxWidth: 320,
-          color: mapStyle === 'retro' || mapStyle === 'standard' ? '#333' : '#fff'
+          color: mapStyle === 'dark' ? '#fff' : '#333'
         }}
       >
         <Info size={16} className="text-gold" />

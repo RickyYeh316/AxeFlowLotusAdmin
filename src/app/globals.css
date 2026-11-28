@@ -848,6 +848,19 @@ body.modal-open .workspace-tabs-bar {
 }
 
 /* Duty markers on Google Maps and the fallback map. */
+.duty-map-overlay {
+  position: absolute;
+  width: max-content;
+}
+
+.duty-map-pin {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+}
+
 .duty-map-marker {
   display: inline-flex;
   flex-direction: column;
@@ -1407,6 +1420,7 @@ body.modal-open .workspace-tabs-bar {
 .order-filter.category-pill {color:var(--order-tone);border-color:var(--order-tone);background:transparent;box-shadow:none}
 .order-filter.category-pill:hover {background:var(--order-tint)}
 .order-filter.category-pill.active {color:#10151e;background:var(--order-tone);border-color:var(--order-tone);box-shadow:none}
+.driver-duty-badges { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px; }
 .driver-duty, .order-table .order-status, .passenger-current-order .order-status {color:var(--order-tone);border:1px solid var(--order-tone);background:var(--order-tint);line-height:1.6;white-space:normal}
 
 .order-status-toolbar > .btn-secondary {display:inline-flex;align-items:center;gap:8px;white-space:nowrap}

@@ -1,7 +1,8 @@
 import { DriverTripStatus, type Driver } from '../types';
 
 type DutyStatus = DriverTripStatus | 'UNKNOWN';
-export type DriverRow = Omit<Driver, 'tripStatus'> & { tripStatus: DutyStatus };
+type DutyDisplay = { tripStatus: DutyStatus; disconnectedDuringOrder: boolean };
+export type DriverRow = Omit<Driver, 'tripStatus'> & DutyDisplay;
 
 export const dutyBadges: Record<DutyStatus, { label: string; tone: string }> = {
   OFFLINE: { label: '下線', tone: 'order-tone-all' },
@@ -15,11 +16,34 @@ export const dutyBadges: Record<DutyStatus, { label: string; tone: string }> = {
   UNKNOWN: { label: '未知', tone: 'order-tone-unknown' }
 };
 
-export function readDutyStatus(tripStatus: unknown, legacyStatus: unknown): DutyStatus {
+function parseTripStatus(tripStatus: unknown, legacyStatus: unknown): DutyStatus {
   const raw = tripStatus ?? legacyStatus;
   if (raw === 0 || raw === '0') return DriverTripStatus.OFFLINE;
   if (raw === 1 || raw === '1') return DriverTripStatus.IDLE;
   if (raw === 2 || raw === '2') return DriverTripStatus.IN_SERVICE;
   if (tripStatus == null && (raw === 'SUSPENDED' || raw === 'WAIT_APPROVAL')) return DriverTripStatus.OFFLINE;
   return Object.values(DriverTripStatus).find(status => status === raw) ?? 'UNKNOWN';
+}
+
+export function readDriverDuty(tripStatus: unknown, legacyStatus: unknown, presenceStatus: unknown): DutyDisplay {
+  const duty = parseTripStatus(tripStatus, legacyStatus);
+  if (presenceStatus === 'DISCONNECTED') {
+    switch (duty) {
+      case DriverTripStatus.IDLE:
+      case DriverTripStatus.BUSY:
+      case DriverTripStatus.IN_QUEUE:
+        return { tripStatus: DriverTripStatus.OFFLINE, disconnectedDuringOrder: false };
+      case DriverTripStatus.DISPATCHED:
+      case DriverTripStatus.EN_ROUTE:
+      case DriverTripStatus.ARRIVED:
+      case DriverTripStatus.IN_SERVICE:
+        return { tripStatus: duty, disconnectedDuringOrder: true };
+    }
+  }
+  return { tripStatus: duty, disconnectedDuringOrder: false };
+}
+
+export function dutyLabel(driver: DutyDisplay) {
+  const label = dutyBadges[driver.tripStatus].label;
+  return driver.disconnectedDuringOrder ? label + ' · 斷線' : label;
 }

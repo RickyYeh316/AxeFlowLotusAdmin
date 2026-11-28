@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { readDriverDuty } from '../lib/driverDuty';
 import { db } from '../firebase/config';
 import { collection, onSnapshot, query, orderBy, limit } from '../lib/loggedFirestore';
 import { Car, Users, ClipboardList, Tag, Clock, ArrowUpRight } from 'lucide-react';
@@ -29,10 +30,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
       snapshot.forEach((doc) => {
         total++;
         const data = doc.data();
-        let tripStatus = data.tripStatus || data.status || DriverTripStatus.OFFLINE;
-        if (tripStatus === 1 || tripStatus === '1') tripStatus = DriverTripStatus.IDLE;
-        else if (tripStatus === 2 || tripStatus === '2') tripStatus = DriverTripStatus.IN_SERVICE;
-        else if (tripStatus === 0 || tripStatus === '0' || tripStatus === 'SUSPENDED' || tripStatus === 'WAIT_APPROVAL') tripStatus = DriverTripStatus.OFFLINE;
+        const { tripStatus, disconnectedDuringOrder } = readDriverDuty(data.tripStatus, data.status, data.presenceStatus);
 
         let accountStatus = data.accountStatus;
         if (!accountStatus) {
@@ -47,7 +45,7 @@ export default function Overview({ onNavigate }: OverviewProps) {
 
         const isOnline = tripStatus === DriverTripStatus.IDLE || tripStatus === DriverTripStatus.IN_QUEUE || tripStatus === DriverTripStatus.IN_SERVICE;
         const isActive = accountStatus === DriverAccountStatus.ACTIVE;
-        if (isOnline && isActive) {
+        if (isOnline && isActive && !disconnectedDuringOrder) {
           online++;
         }
       });
